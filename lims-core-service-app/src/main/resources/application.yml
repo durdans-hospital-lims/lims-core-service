@@ -1,0 +1,84 @@
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    properties:
+      spring.json.add.type.headers: false
+  datasource:
+    url: jdbc:postgresql://localhost:5432/durdans_lims_db
+    username: postgres
+    password: 55552104
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8081/realms/lims-realm
+
+  liquibase:
+    enabled: true
+    change-log: classpath:/liquibase/master.xml
+
+  cloud:
+   aws:
+      region: us-east-1
+      credentials:
+        access-key: test
+        secret-key: test
+      s3:
+        bucket: lims-patient-documents
+      endpoint: http://localhost:4566
+
+  
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: malinirmarjoki@gmail.com
+    password: rdgxkkegtrqllris
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          ssl:
+            trust: smtp.gmail.com
+          connectiontimeout: 30000
+          timeout: 30000
+          writetimeout: 30000
+        debug: true
+
+
+
+app:
+  file:
+    max-size: 10485760   # 10MB
+    allowed-types:
+      - application/pdf
+      - image/jpeg
+      - image/png
+    allowed-extensions:
+      - pdf
+      - png
+      - jpg
+      - jpeg
+  verification:
+    base-url: http://localhost:11000
+
+
+
+server:
+  port: 11000

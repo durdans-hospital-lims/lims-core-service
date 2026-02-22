@@ -1,0 +1,100 @@
+package com.uom.lims.notification;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class EmailService {
+
+    private final JavaMailSender mailSender;
+
+    @Value("${spring.mail.username}")
+    private String fromEmail;
+
+    @Value("${app.verification.base-url}")
+    private String baseUrl;
+
+    public void sendVerificationEmail(String toEmail, String patientName, String rawToken) {
+
+        String verificationLink = baseUrl + "/api/v1/patients/verify-email?token=" + rawToken;
+
+        try {
+            jakarta.mail.internet.MimeMessage message = mailSender.createMimeMessage();
+            org.springframework.mail.javamail.MimeMessageHelper helper = new org.springframework.mail.javamail.MimeMessageHelper(
+                    message, true, "UTF-8");
+
+            helper.setFrom(fromEmail);
+            helper.setTo(toEmail);
+            helper.setSubject("Verify Your Email - LIMS");
+
+            String htmlContent = generateVerificationEmailHtml(patientName, verificationLink);
+            helper.setText(htmlContent, true);
+
+            mailSender.send(message);
+        } catch (jakarta.mail.MessagingException e) {
+            throw new RuntimeException("Failed to send verification email to " + toEmail, e);
+        }
+    }
+
+    private String generateVerificationEmailHtml(String patientName, String verificationLink) {
+        return """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                        body { font-family: 'Inter', sans-serif; background-color: #f6f7f8; margin: 0; padding: 0; }
+                        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+                        .header { background-color: #101922; padding: 24px; text-align: center; }
+                        .header h1 { color: #ffffff; margin: 0; font-size: 24px; font-weight: 700; }
+                        .header span { color: #137fec; }
+                        .content { padding: 40px 32px; color: #1e293b; }
+                        .greeting { font-size: 18px; font-weight: 600; margin-bottom: 24px; }
+                        .message { font-size: 16px; line-height: 1.6; color: #475569; margin-bottom: 32px; }
+                        .button-container { text-align: center; margin: 32px 0; }
+                        .button { background-color: #137fec; color: #ffffff !important; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; font-size: 16px; }
+                        .footer { background-color: #f8fafc; padding: 24px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+                        .link-text { font-size: 12px; color: #94a3b8; margin-top: 24px; word-break: break-all; }
+                        a.raw-link { color: #137fec; text-decoration: none; }
+                    </style>
+                </head>
+                <body>
+                    <div style="padding: 40px 0;">
+                        <div class="container">
+                            <div class="header">
+                                <h1>DURDANS <span>ERP</span></h1>
+                            </div>
+                            <div class="content">
+                                <div class="greeting">Dear %s,</div>
+                                <div class="message">
+                                    Thank you for registering with Durdans Hospital Patient Management System.
+                                    To ensure the security of your account and access all features, please verify your email address.
+                                </div>
+                                <div class="button-container">
+                                    <a href="%s" class="button" style="color: #ffffff !important;">Verify Email Address</a>
+                                </div>
+                                <div class="message">
+                                    This link will expire in 24 hours. If you did not create an account, no further action is required.
+                                </div>
+                                <div class="link-text">
+                                    If the button above doesn't work, copy and paste this link into your browser:<br>
+                                    <a href="%s" class="raw-link">%s</a>
+                                </div>
+                            </div>
+                            <div class="footer">
+                                &copy; %d Durdans Hospital. All Rights Reserved.<br>
+                                This is an automated message, please do not reply.
+                            </div>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """
+                .formatted(patientName, verificationLink, verificationLink, verificationLink,
+                        java.time.Year.now().getValue());
+    }
+}

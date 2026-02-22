@@ -1,0 +1,149 @@
+package com.uom.lims.exception;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import software.amazon.awssdk.services.s3.model.S3Exception;
+
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.Map;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+
+@Slf4j
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+        @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+        public ResponseEntity<?> handleOptimisticLockException(ObjectOptimisticLockingFailureException ex) {
+                log.warn("Optimistic locking failure: {}", ex.getMessage());
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                                .body(Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.CONFLICT.value(),
+                                                "error", "Conflict",
+                                                "message",
+                                                "Record was modified by another user. Please refresh and try again."));
+        }
+
+        @ExceptionHandler(DuplicateResourceException.class)
+        public ResponseEntity<?> handleDuplicateResource(DuplicateResourceException ex) {
+                log.error("Duplicate resource error: {}", ex.getMessage());
+
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.CONFLICT.value(),
+                                                "error", "Duplicate Resource",
+                                                "message", ex.getMessage()));
+        }
+
+        @ExceptionHandler(ResourceNotFoundException.class)
+        public ResponseEntity<?> handleNotFound(ResourceNotFoundException ex) {
+                log.error("Resource not found: {}", ex.getMessage());
+
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.NOT_FOUND.value(),
+                                                "error", "Not Found",
+                                                "message", ex.getMessage()));
+        }
+
+        @ExceptionHandler(IOException.class)
+        public ResponseEntity<?> handleIOException(IOException ex) {
+                log.error("IO error occurred", ex);
+
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                                                "error", "File Processing Error",
+                                                "message", "Failed to process file: " + ex.getMessage()));
+        }
+
+        @ExceptionHandler(S3Exception.class)
+        public ResponseEntity<?> handleS3Exception(S3Exception ex) {
+                log.error("S3 error occurred - Status Code: {}, Error Code: {}",
+                                ex.statusCode(), ex.awsErrorDetails().errorCode(), ex);
+
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                                                "error", "Storage Service Error",
+                                                "message", "Failed to upload document to storage: "
+                                                                + ex.awsErrorDetails().errorMessage()));
+        }
+
+        @ExceptionHandler(IllegalArgumentException.class)
+        public ResponseEntity<?> handleIllegalArgument(IllegalArgumentException ex) {
+                log.error("Invalid argument: {}", ex.getMessage());
+
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.BAD_REQUEST.value(),
+                                                "error", "Invalid Request",
+                                                "message", ex.getMessage()));
+        }
+
+        @ExceptionHandler(InvalidRequestException.class)
+        public ResponseEntity<?> handleInvalidRequest(InvalidRequestException ex) {
+                log.warn("Invalid request: {}", ex.getMessage());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.BAD_REQUEST.value(),
+                                                "error", "Invalid Request",
+                                                "message", ex.getMessage()));
+        }
+
+        @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
+        public ResponseEntity<?> handleValidationExceptions(
+                        org.springframework.web.bind.MethodArgumentNotValidException ex) {
+                log.warn("Validation failed: {}", ex.getMessage());
+                Map<String, String> errors = new java.util.HashMap<>();
+                ex.getBindingResult().getAllErrors().forEach((error) -> {
+                        String fieldName = ((org.springframework.validation.FieldError) error).getField();
+                        String errorMessage = error.getDefaultMessage();
+                        errors.put(fieldName, errorMessage);
+                });
+
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.BAD_REQUEST.value(),
+                                                "error", "Validation Failed",
+                                                "message", "Input validation failed",
+                                                "details", errors));
+        }
+
+        @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+        public ResponseEntity<?> handleNoResourceFoundException(
+                        org.springframework.web.servlet.resource.NoResourceFoundException ex) {
+                log.warn("Resource not found: {}", ex.getMessage());
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.NOT_FOUND.value(),
+                                                "error", "Not Found",
+                                                "message", ex.getMessage()));
+        }
+
+        @ExceptionHandler(Exception.class)
+        public ResponseEntity<?> handleGenericException(Exception ex) {
+                log.error("Unexpected error occurred", ex);
+
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                                                "error", "Internal Server Error",
+                                                "message", ex.getMessage() != null ? ex.getMessage()
+                                                                : "An unexpected error occurred"));
+        }
+
+}

@@ -1,0 +1,55 @@
+package com.uom.lims.patient;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+
+import java.time.LocalDateTime;
+import java.util.Optional;
+import java.util.UUID;
+
+public interface PatientRepository
+                extends JpaRepository<PatientEntity, UUID>,
+                JpaSpecificationExecutor<PatientEntity> {
+
+        @Query(value = "SELECT nextval('patient_code_seq')", nativeQuery = true)
+        Long getNextPatientSequence();
+
+        boolean existsByPhone(String phone);
+
+        Optional<PatientEntity> findByPhone(String phone);
+
+        boolean existsByEmail(String email);
+
+        Optional<PatientEntity> findByEmail(String email);
+
+        boolean existsByIdentityNumber(String identityNumber);
+
+        boolean existsByIdentityTypeAndIdentityNumber(
+                        com.uom.lims.api.common.enums.IdentityType identityType,
+                        String identityNumber);
+
+        Optional<PatientEntity> findByIdentityTypeAndIdentityNumber(
+                        com.uom.lims.api.common.enums.IdentityType identityType,
+                        String identityNumber);
+
+        Optional<PatientEntity> findByPatientCode(String patientCode);
+
+        Page<PatientEntity> findByFullNameContainingIgnoreCaseOrPhoneContaining(
+                        String fullName,
+                        String phone,
+                        Pageable pageable);
+
+        Optional<PatientEntity> findByEmailVerificationTokenHash(String hash);
+
+        long countByCreatedAtAfter(LocalDateTime dateTime);
+
+        long countByBranchCodeAndCreatedAtAfter(String branchCode, LocalDateTime dateTime);
+
+        long countByEmailVerifiedFalseOrPhoneVerifiedFalse();
+
+        long countByBranchCodeAndEmailVerifiedFalseOrBranchCodeAndPhoneVerifiedFalse(String branchCode1,
+                        String branchCode2);
+}
