@@ -11,6 +11,7 @@ import java.util.List;
 @Builder
 public class MetadataResponse {
     private String currentBranchName;
+    private String currentBranchCode;
     private List<NavItem> navItems;
 
     @Getter

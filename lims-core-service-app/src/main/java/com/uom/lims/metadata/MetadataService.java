@@ -34,15 +34,6 @@ public class MetadataService {
         String branchCode = SecurityUtils.getCurrentBranchId();
         log.info("Extracted branchCode for metadata: {}", branchCode);
 
-        // DEBUG: Exhaustive claim search to find the correct key for branch (e.g.,
-        // "COL-15")
-        jwt.getClaims().forEach((k, v) -> {
-            String valueStr = String.valueOf(v);
-            if (valueStr.contains("COL-") || valueStr.contains("MAT-") || valueStr.contains("GAL-")) {
-                log.info("POTENTIAL BRANCH CLAIM FOUND! Key: '{}', Value: '{}'", k, v);
-            }
-        });
-
         String branchName = "No Branch Assigned";
         if (branchCode != null) {
             branchName = branchRepository.findByCode(branchCode)
@@ -65,6 +56,7 @@ public class MetadataService {
 
         return MetadataResponse.builder()
                 .currentBranchName(branchName)
+                .currentBranchCode(branchCode)
                 .navItems(navItems)
                 .build();
     }

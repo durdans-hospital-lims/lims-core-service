@@ -2,6 +2,8 @@ package com.uom.lims.patient;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+
+import com.uom.lims.security.SecurityUtils;
 import org.springframework.context.ApplicationEventPublisher;
 import com.uom.lims.api.patient.dto.request.PatientCreateRequest;
 import com.uom.lims.api.patient.dto.request.PatientUpdateRequest;
@@ -75,8 +77,14 @@ public class PatientService {
                 patient.setEmail(request.getEmail());
                 patient.setHomeNumber(request.getHomeNumber());
                 patient.setAddress(request.getAddress());
-                patient.setContactPersonName(request.getContactPersonName());
                 patient.setContactPersonPhone(request.getContactPersonPhone());
+
+                // Set Branch Code (from request or fallback to current user's branch)
+                String branchCode = request.getBranchCode();
+                if (branchCode == null || branchCode.isBlank() || "BR001".equals(branchCode)) {
+                        branchCode = SecurityUtils.getCurrentBranchId();
+                }
+                patient.setBranchCode(branchCode);
 
                 // Save
                 PatientEntity saved = patientRepository.save(patient);
@@ -308,6 +316,8 @@ public class PatientService {
                         patient.setContactPersonName(request.getContactPersonName());
                 if (request.getContactPersonPhone() != null)
                         patient.setContactPersonPhone(request.getContactPersonPhone());
+                if (request.getBranchCode() != null)
+                        patient.setBranchCode(request.getBranchCode());
 
                 // 6. Reset Email Verification if changed
                 boolean emailChanged = false;

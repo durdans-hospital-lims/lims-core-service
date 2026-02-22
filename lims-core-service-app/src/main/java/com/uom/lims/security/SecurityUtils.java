@@ -12,10 +12,6 @@ public class SecurityUtils {
             return null;
         }
 
-        // Log available claims to help debug missing branch info
-        System.out.println("DEBUG: Available JWT Claims for user " + jwt.getClaimAsString("preferred_username") + ": "
-                + jwt.getClaims().keySet());
-
         // Try multiple common claim names
         String branchId = jwt.getClaimAsString("branch_id");
         if (branchId == null)
