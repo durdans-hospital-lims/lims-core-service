@@ -2,7 +2,6 @@ package com.uom.lims.patient;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-
 import com.uom.lims.security.SecurityUtils;
 import org.springframework.context.ApplicationEventPublisher;
 import com.uom.lims.api.patient.dto.request.PatientCreateRequest;
@@ -29,7 +28,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
-import lombok.extern.slf4j.Slf4j;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.multipart.MultipartFile;
 
