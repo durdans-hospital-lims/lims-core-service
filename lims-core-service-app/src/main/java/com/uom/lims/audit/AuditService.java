@@ -3,6 +3,10 @@ package com.uom.lims.audit;
 import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,10 +35,6 @@ public class AuditService {
         auditLog.setEntityId(entityId);
         auditLog.setPatientCode(patientCode);
 
-        // Handle cases where security context might be empty (e.g. system tasks)
-        // For legal grade auditing, we might want to throw if user is unknown,
-        // but for now we'll allow SYSTEM if context is missing (though our
-        // SecurityUtils throws)
         try {
             String username = SecurityUtils.getCurrentUsername();
             auditLog.setPerformedBy(username != null ? username : "SYSTEM");
@@ -55,5 +55,35 @@ public class AuditService {
 
         repository.save(auditLog);
         log.info("Audit log saved: {} on {} by {}", action, entityType, auditLog.getPerformedBy());
+    }
+
+    /**
+     * Query audit logs with optional filters.
+     * If branchCode is provided, only logs for that branch are returned.
+     * If branchCode is null, all logs are returned (for SUPER_ADMIN).
+     */
+    @Transactional(readOnly = true)
+    public Page<AuditLog> getAuditLogs(
+            String branchCode,
+            String action,
+            String entityType,
+            String performedBy,
+            String search,
+            int page,
+            int size) {
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
+
+        // Normalize empty strings to null for the JPA query
+        action = (action != null && action.isBlank()) ? null : action;
+        entityType = (entityType != null && entityType.isBlank()) ? null : entityType;
+        performedBy = (performedBy != null && performedBy.isBlank()) ? null : performedBy;
+        search = (search != null && search.isBlank()) ? null : search;
+
+        if (branchCode != null && !branchCode.isBlank()) {
+            return repository.findByBranchCodeFiltered(branchCode, action, entityType, performedBy, search, pageable);
+        } else {
+            return repository.findAllFiltered(action, entityType, performedBy, search, pageable);
+        }
     }
 }

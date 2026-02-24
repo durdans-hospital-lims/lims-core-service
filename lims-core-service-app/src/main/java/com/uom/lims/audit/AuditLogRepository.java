@@ -1,10 +1,87 @@
 package com.uom.lims.audit;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.UUID;
 
 @Repository
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
+
+        Page<AuditLog> findByBranchCode(String branchCode, Pageable pageable);
+
+        @Query(value = "SELECT * FROM audit_log a WHERE a.branch_code = :branchCode " +
+                        "AND (:action IS NULL OR a.action = CAST(:action AS VARCHAR)) " +
+                        "AND (:entityType IS NULL OR a.entity_type = CAST(:entityType AS VARCHAR)) " +
+                        "AND (:performedBy IS NULL OR a.performed_by = CAST(:performedBy AS VARCHAR)) " +
+                        "AND (:search IS NULL OR (" +
+                        "    LOWER(CAST(COALESCE(a.patient_code, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                        +
+                        "    LOWER(CAST(COALESCE(a.performed_by, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                        +
+                        "    LOWER(CAST(COALESCE(a.action, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                        +
+                        "    LOWER(CAST(COALESCE(a.entity_type, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%')"
+                        +
+                        "))", countQuery = "SELECT COUNT(*) FROM audit_log a WHERE a.branch_code = :branchCode " +
+                                        "AND (:action IS NULL OR a.action = CAST(:action AS VARCHAR)) " +
+                                        "AND (:entityType IS NULL OR a.entity_type = CAST(:entityType AS VARCHAR)) " +
+                                        "AND (:performedBy IS NULL OR a.performed_by = CAST(:performedBy AS VARCHAR)) "
+                                        +
+                                        "AND (:search IS NULL OR (" +
+                                        "    LOWER(CAST(COALESCE(a.patient_code, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                                        +
+                                        "    LOWER(CAST(COALESCE(a.performed_by, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                                        +
+                                        "    LOWER(CAST(COALESCE(a.action, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                                        +
+                                        "    LOWER(CAST(COALESCE(a.entity_type, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%')"
+                                        +
+                                        "))", nativeQuery = true)
+        Page<AuditLog> findByBranchCodeFiltered(
+                        @Param("branchCode") String branchCode,
+                        @Param("action") String action,
+                        @Param("entityType") String entityType,
+                        @Param("performedBy") String performedBy,
+                        @Param("search") String search,
+                        Pageable pageable);
+
+        @Query(value = "SELECT * FROM audit_log a WHERE " +
+                        "(:action IS NULL OR a.action = CAST(:action AS VARCHAR)) " +
+                        "AND (:entityType IS NULL OR a.entity_type = CAST(:entityType AS VARCHAR)) " +
+                        "AND (:performedBy IS NULL OR a.performed_by = CAST(:performedBy AS VARCHAR)) " +
+                        "AND (:search IS NULL OR (" +
+                        "    LOWER(CAST(COALESCE(a.patient_code, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                        +
+                        "    LOWER(CAST(COALESCE(a.performed_by, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                        +
+                        "    LOWER(CAST(COALESCE(a.action, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                        +
+                        "    LOWER(CAST(COALESCE(a.entity_type, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%')"
+                        +
+                        "))", countQuery = "SELECT COUNT(*) FROM audit_log a WHERE " +
+                                        "(:action IS NULL OR a.action = CAST(:action AS VARCHAR)) " +
+                                        "AND (:entityType IS NULL OR a.entity_type = CAST(:entityType AS VARCHAR)) " +
+                                        "AND (:performedBy IS NULL OR a.performed_by = CAST(:performedBy AS VARCHAR)) "
+                                        +
+                                        "AND (:search IS NULL OR (" +
+                                        "    LOWER(CAST(COALESCE(a.patient_code, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                                        +
+                                        "    LOWER(CAST(COALESCE(a.performed_by, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                                        +
+                                        "    LOWER(CAST(COALESCE(a.action, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%') OR "
+                                        +
+                                        "    LOWER(CAST(COALESCE(a.entity_type, '') AS TEXT)) LIKE LOWER('%' || CAST(:search AS TEXT) || '%')"
+                                        +
+                                        "))", nativeQuery = true)
+        Page<AuditLog> findAllFiltered(
+                        @Param("action") String action,
+                        @Param("entityType") String entityType,
+                        @Param("performedBy") String performedBy,
+                        @Param("search") String search,
+                        Pageable pageable);
 }
