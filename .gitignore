@@ -37,6 +37,9 @@ out/
 .vscode/
 
 ### Application Secrets ###
-**/application.yml
-**/application-*.yml
-!**/application-endpoint.yml
+# Main application.yml should be tracked in Git.
+# Only ignore local override files
+application-local.yml
+application-secret.yml
+application-*.yml
+!application-endpoint.yml

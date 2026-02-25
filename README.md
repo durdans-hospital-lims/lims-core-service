@@ -59,7 +59,18 @@ Ensure the following tools and dependencies are running on your local machine be
    cd e:/2nd year project/durdans-lims/lims-core-service
    ```
 
-2. **Setup environment properties** Check `application.yml` inside `lims-core-service-app/src/main/resources`. Secrets/Passwords are defined there for local development but must be externalized for production.
+2. **Setup environment properties**
+   The main `application.yml` is committed to Git and uses environment variable placeholders with safe local defaults (e.g., `postgres` / `eta8827`).
+   
+   If you need to use different local credentials (like a different Postgres password) **do not modify `application.yml` directly**. Instead, create a local override file:
+   
+   Create `lims-core-service-app/src/main/resources/application-local.yml`:
+   ```yaml
+   spring:
+     datasource:
+       password: your_custom_local_password
+   ```
+   *(Note: `application-local.yml` is ignored by Git, so your local secrets are safe).*
 
 3. **Build the application**:
    ```bash
@@ -67,9 +78,14 @@ Ensure the following tools and dependencies are running on your local machine be
    ```
 
 4. **Run the Spring Boot application**:
-   ```bash
-   ./gradlew :lims-core-service-app:bootRun
-   ```
+   - To run with default mocked properties:
+     ```bash
+     ./gradlew :lims-core-service-app:bootRun
+     ```
+   - To run utilizing your custom `application-local.yml`:
+     ```bash
+     ./gradlew :lims-core-service-app:bootRun --args='--spring.profiles.active=local'
+     ```
    *The server will start locally on port `11000`.*
 
 ---
