@@ -273,7 +273,7 @@
         <insert tableName="header_mapping">
             <column name="id" value="20000000-0000-0000-0000-000000000107"/>
             <column name="role_name" value="MLT"/>
-            <column name="display_text" value="Lab Testing"/>
+            <column name="display_text" value="MLT"/>
             <column name="link_url" value="/lab-testing"/>
             <column name="priority" value="70"/>
             <column name="created_at" valueComputed="CURRENT_TIMESTAMP"/>
