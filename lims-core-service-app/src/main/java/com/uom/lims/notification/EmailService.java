@@ -39,6 +39,36 @@ public class EmailService {
         }
     }
 
+    public void sendLabReportEmail(String toEmail, String patientName, String reportReference, String testPanelLabel,
+            String artifactUri) {
+        try {
+            jakarta.mail.internet.MimeMessage message = mailSender.createMimeMessage();
+            org.springframework.mail.javamail.MimeMessageHelper helper = new org.springframework.mail.javamail.MimeMessageHelper(
+                    message, true, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(toEmail);
+            helper.setSubject("Your laboratory report " + reportReference + " – Durdans Hospital");
+            String linkOrNote = (artifactUri != null && !artifactUri.isBlank())
+                    ? "<p><a href=\"" + artifactUri + "\">Download report</a></p>"
+                    : "<p>Your report is available at the laboratory reception.</p>";
+            String html = """
+                    <p>Dear %s,</p>
+                    <p>Your authorized laboratory report is ready.</p>
+                    <ul>
+                    <li><b>Report</b>: %s</li>
+                    <li><b>Test</b>: %s</li>
+                    </ul>
+                    %s
+                    <p>— Durdans Hospital Laboratory</p>
+                    """
+                    .formatted(patientName, reportReference, testPanelLabel, linkOrNote);
+            helper.setText(html, true);
+            mailSender.send(message);
+        } catch (jakarta.mail.MessagingException e) {
+            throw new RuntimeException("Failed to send lab report email to " + toEmail, e);
+        }
+    }
+
     private String generateVerificationEmailHtml(String patientName, String verificationLink) {
         return """
                 <!DOCTYPE html>

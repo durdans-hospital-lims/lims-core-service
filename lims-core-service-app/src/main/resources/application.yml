@@ -1,6 +1,9 @@
 spring:
   kafka:
     bootstrap-servers: localhost:9092
+    consumer:
+      group-id: lims-dispatch-ingress
+      auto-offset-reset: earliest
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -64,6 +67,10 @@ spring:
 
 
 app:
+  kafka:
+    lab-report-listener-enabled: false
+    topics:
+      lab-report-authorized: lab.report.authorized
   file:
     max-size: 10485760   # 10MB
     allowed-types:
