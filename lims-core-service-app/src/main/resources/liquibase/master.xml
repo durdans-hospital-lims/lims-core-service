@@ -9,6 +9,7 @@
     <include file="liquibase/changelog/20260217091400_create_patient_document_table.xml"/>
     <include file="/liquibase/changelog/20260218171500_create_audit_log_table.xml"/>
     <include file="liquibase/changelog/20260221183000_create_metadata_tables.xml"/>
+    <include file="liquibase/changelog/20260418131000_create_orders_billing_tables.xml"/>
 
 
 </databaseChangeLog>
