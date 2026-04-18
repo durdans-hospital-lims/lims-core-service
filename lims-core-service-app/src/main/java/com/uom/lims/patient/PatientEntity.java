@@ -120,7 +120,4 @@ public class PatientEntity extends BaseEntity {
 
     @Column(name = "branch_code")
     private String branchCode;
-
-    @Version
-    private Long version;
 }

@@ -1,7 +1,9 @@
 package com.uom.lims.patient;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import com.uom.lims.security.SecurityUtils;
 import org.springframework.context.ApplicationEventPublisher;
 import com.uom.lims.api.patient.dto.request.PatientCreateRequest;
@@ -353,23 +355,28 @@ public class PatientService {
         }
 
         public DashboardStatisticsResponse getDashboardStatistics(String branchCode) {
+                ZoneId zone = ZoneId.systemDefault();
                 LocalDateTime now = LocalDateTime.now();
                 LocalDateTime beginningOfToday = now.toLocalDate().atStartOfDay();
                 LocalDateTime beginningOfWeek = beginningOfToday.minusDays(now.getDayOfWeek().getValue() % 7);
+                Instant beginningOfTodayInstant = beginningOfToday.atZone(zone).toInstant();
+                Instant beginningOfWeekInstant = beginningOfWeek.atZone(zone).toInstant();
 
                 long todayCount;
                 long weekCount;
                 long pendingVerifications;
 
                 if (branchCode != null && !branchCode.isEmpty()) {
-                        todayCount = patientRepository.countByBranchCodeAndCreatedAtAfter(branchCode, beginningOfToday);
-                        weekCount = patientRepository.countByBranchCodeAndCreatedAtAfter(branchCode, beginningOfWeek);
+                        todayCount = patientRepository.countByBranchCodeAndCreatedAtAfter(branchCode,
+                                        beginningOfTodayInstant);
+                        weekCount = patientRepository.countByBranchCodeAndCreatedAtAfter(branchCode,
+                                        beginningOfWeekInstant);
                         pendingVerifications = patientRepository
                                         .countByBranchCodeAndEmailVerifiedFalseOrBranchCodeAndPhoneVerifiedFalse(
                                                         branchCode, branchCode);
                 } else {
-                        todayCount = patientRepository.countByCreatedAtAfter(beginningOfToday);
-                        weekCount = patientRepository.countByCreatedAtAfter(beginningOfWeek);
+                        todayCount = patientRepository.countByCreatedAtAfter(beginningOfTodayInstant);
+                        weekCount = patientRepository.countByCreatedAtAfter(beginningOfWeekInstant);
                         pendingVerifications = patientRepository.countByEmailVerifiedFalseOrPhoneVerifiedFalse();
                 }
 
@@ -603,8 +610,8 @@ public class PatientService {
                                 .phone(patient.getPhone())
                                 .phoneVerified(patient.isPhoneVerified())
                                 .emailVerified(patient.isEmailVerified())
-                                .createdAt(patient.getCreatedAt())
-                                .updatedAt(patient.getLastModifiedAt())
+                                .createdAt(toLocalDateTime(patient.getCreatedAt()))
+                                .updatedAt(toLocalDateTime(patient.getLastModifiedAt()))
                                 .profilePhotoUrl(patient.getProfilePhotoPath() != null
                                                 && !patient.getProfilePhotoPath().isBlank()
                                                                 ? storageService.generatePresignedUrl(
@@ -624,5 +631,9 @@ public class PatientService {
                                 .contactPersonName(patient.getContactPersonName())
                                 .contactPersonPhone(patient.getContactPersonPhone())
                                 .build();
+        }
+
+        private static LocalDateTime toLocalDateTime(Instant instant) {
+                return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
         }
 }

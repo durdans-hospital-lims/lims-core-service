@@ -19,6 +19,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import java.util.UUID;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -287,7 +288,8 @@ public class PatientDocumentService {
                 .description(entity.getDescription())
                 .contentType(entity.getContentType())
                 .fileSize(entity.getFileSize())
-                .uploadedAt(entity.getCreatedAt())
+                .uploadedAt(entity.getCreatedAt() == null ? null
+                                : LocalDateTime.ofInstant(entity.getCreatedAt(), ZoneId.systemDefault()))
                 .uploadedBy(entity.getUploadedBy())
                 .uploadedBranch(entity.getBranchCode())
                 .build();

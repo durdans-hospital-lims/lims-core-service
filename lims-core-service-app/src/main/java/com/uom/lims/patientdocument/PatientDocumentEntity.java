@@ -41,9 +41,6 @@ public class PatientDocumentEntity extends BaseEntity {
     @Column(name = "description")
     private String description;
 
-    @Column(name = "is_deleted", nullable = false)
-    private boolean deleted = false;
-
     @Column(name = "branch_code", nullable = false, length = 20)
     private String branchCode;
 
