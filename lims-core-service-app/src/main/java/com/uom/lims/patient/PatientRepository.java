@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -44,9 +44,9 @@ public interface PatientRepository
 
         Optional<PatientEntity> findByEmailVerificationTokenHash(String hash);
 
-        long countByCreatedAtAfter(LocalDateTime dateTime);
+        long countByCreatedAtAfter(Instant dateTime);
 
-        long countByBranchCodeAndCreatedAtAfter(String branchCode, LocalDateTime dateTime);
+        long countByBranchCodeAndCreatedAtAfter(String branchCode, Instant dateTime);
 
         long countByEmailVerifiedFalseOrPhoneVerifiedFalse();
 
