@@ -133,6 +133,32 @@ public class GlobalExceptionHandler {
                                                 "message", ex.getMessage()));
         }
 
+        // WHY: BusinessValidationException signals a domain rule violation (e.g. discount > 100%).
+        // HTTP 422 tells consumers the request was well-formed but semantically rejected.
+        @ExceptionHandler(BusinessValidationException.class)
+        public ResponseEntity<?> handleBusinessValidation(BusinessValidationException ex) {
+                log.warn("Business validation failed: {}", ex.getMessage());
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                                                "error", "Business Rule Violation",
+                                                "message", ex.getMessage()));
+        }
+
+        // WHY: InvalidStateTransitionException signals an illegal clinical workflow change
+        // (e.g. COMPLETED → PENDING). HTTP 422 distinguishes this from a 403 auth error.
+        @ExceptionHandler(InvalidStateTransitionException.class)
+        public ResponseEntity<?> handleInvalidStateTransition(InvalidStateTransitionException ex) {
+                log.warn("Invalid state transition attempted: {}", ex.getMessage());
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                                                "error", "Invalid State Transition",
+                                                "message", ex.getMessage()));
+        }
+
         @ExceptionHandler(Exception.class)
         public ResponseEntity<?> handleGenericException(Exception ex) {
                 log.error("Unexpected error occurred", ex);
