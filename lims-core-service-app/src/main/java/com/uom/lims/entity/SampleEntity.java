@@ -70,10 +70,4 @@ public class SampleEntity extends BaseEntity {
     @Column(name = "rejection_reason")
     private RejectionReason rejectionReason;
 
-    @Column(name = "is_deleted", nullable = false)
-    private boolean deleted = false;
-
-    @Version
-    @Column(name = "version")
-    private Long version = 0L;
 }

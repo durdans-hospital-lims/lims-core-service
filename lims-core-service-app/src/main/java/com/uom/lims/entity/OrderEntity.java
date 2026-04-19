@@ -50,13 +50,6 @@ public class OrderEntity extends BaseEntity {
     @Column(name = "remarks")
     private String remarks;
 
-    @Column(name = "is_deleted", nullable = false)
-    private boolean deleted = false;
-
-    @Version
-    @Column(name = "version")
-    private Long version = 0L;
-
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<OrderItemEntity> items = new ArrayList<>();
 

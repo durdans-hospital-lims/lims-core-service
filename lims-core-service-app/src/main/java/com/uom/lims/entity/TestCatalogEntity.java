@@ -46,10 +46,4 @@ public class TestCatalogEntity extends BaseEntity {
     @Column(name = "turn_around_time_hours")
     private Integer turnAroundTimeHours;
 
-    @Column(name = "is_deleted", nullable = false)
-    private boolean deleted = false;
-
-    @Version
-    @Column(name = "version")
-    private Long version = 0L;
 }

@@ -41,13 +41,6 @@ public class OrderItemEntity extends BaseEntity {
     @Column(name = "status", nullable = false)
     private SampleStatus status = SampleStatus.PENDING_COLLECTION;
 
-    @Column(name = "is_deleted", nullable = false)
-    private boolean deleted = false;
-
-    @Version
-    @Column(name = "version")
-    private Long version = 0L;
-
     @OneToOne(mappedBy = "orderItem", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private SampleEntity sample;
 }

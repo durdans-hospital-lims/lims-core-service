@@ -64,13 +64,6 @@ public class BillEntity extends BaseEntity {
     @Column(name = "last_printed_by")
     private String lastPrintedBy;
 
-    @Column(name = "is_deleted", nullable = false)
-    private boolean deleted = false;
-
-    @Version
-    @Column(name = "version")
-    private Long version = 0L;
-
     @OneToMany(mappedBy = "bill", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<PaymentEntity> payments = new ArrayList<>();
 }

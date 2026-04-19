@@ -60,10 +60,4 @@ public class PaymentEntity extends BaseEntity {
     @Column(name = "reversal_reason")
     private String reversalReason;
 
-    @Column(name = "is_deleted", nullable = false)
-    private boolean deleted = false;
-
-    @Version
-    @Column(name = "version")
-    private Long version = 0L;
 }
