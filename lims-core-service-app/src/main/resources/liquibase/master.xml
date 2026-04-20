@@ -4,12 +4,11 @@
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.7.xsd">
-
     <include file="liquibase/changelog/20260216164500_create_patient_table.xml"/>
     <include file="liquibase/changelog/20260217091400_create_patient_document_table.xml"/>
     <include file="/liquibase/changelog/20260218171500_create_audit_log_table.xml"/>
     <include file="liquibase/changelog/20260221183000_create_metadata_tables.xml"/>
     <include file="liquibase/changelog/20260416120000_create_report_dispatch_tables.xml"/>
     <include file="liquibase/changelog/20260418120000_add_base_entity_shared_columns.xml"/>
-
+    <include file="liquibase/changelog/20260418131000_create_orders_billing_tables.xml"/>
 </databaseChangeLog>
