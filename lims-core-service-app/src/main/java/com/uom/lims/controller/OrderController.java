@@ -28,7 +28,7 @@ public class OrderController implements OrderApi {
     private final OrderService orderService;
 
     @Override
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasRole('BILLING_OFFICER')")
     public ResponseEntity<ApiResponse<OrderResponse>> createOrder(OrderCreateRequest request) {
         OrderResponse response = orderService.createOrder(request);
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -36,7 +36,7 @@ public class OrderController implements OrderApi {
     }
 
     @Override
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasRole('BILLING_OFFICER')")
     public ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> getOrders(int page, int size, String sort) {
         Sort springSort;
         try {
@@ -61,7 +61,7 @@ public class OrderController implements OrderApi {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('RECEPTIONIST', 'PHLEBOTOMIST')")
+    @PreAuthorize("hasAnyRole('BILLING_OFFICER', 'PHLEBOTOMIST')")
     public ResponseEntity<ApiResponse<OrderResponse>> getOrderById(UUID id) {
         return ResponseEntity.ok(ApiResponse.success(orderService.getOrderById(id)));
     }

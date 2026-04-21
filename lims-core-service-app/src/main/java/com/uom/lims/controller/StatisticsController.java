@@ -20,7 +20,7 @@ public class StatisticsController implements StatisticsApi {
     private final StatisticsService statisticsService;
 
     @Override
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasRole('BILLING_OFFICER')")
     public ResponseEntity<ApiResponse<OrdersBillingStatsResponse>> getOrdersBillingStats() {
         return ResponseEntity.ok(ApiResponse.success(statisticsService.getOrdersBillingStats()));
     }

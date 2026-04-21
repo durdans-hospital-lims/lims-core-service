@@ -25,25 +25,25 @@ public class BillController implements BillApi {
     private final BillingService billingService;
 
     @Override
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasRole('BILLING_OFFICER')")
     public ResponseEntity<ApiResponse<BillResponse>> getBillByOrderId(UUID orderId) {
         return ResponseEntity.ok(ApiResponse.success(billingService.getBillByOrderId(orderId)));
     }
 
     @Override
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasRole('BILLING_OFFICER')")
     public ResponseEntity<ApiResponse<BillResponse>> getBillById(UUID billId) {
         return ResponseEntity.ok(ApiResponse.success(billingService.getBillById(billId)));
     }
 
     @Override
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasRole('BILLING_OFFICER')")
     public ResponseEntity<ApiResponse<BillResponse>> applyDiscount(UUID billId, BillDiscountRequest request) {
         return ResponseEntity.ok(ApiResponse.success(billingService.applyDiscount(billId, request)));
     }
 
     @Override
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasRole('BILLING_OFFICER')")
     public ResponseEntity<ApiResponse<BillResponse>> processPayment(UUID billId, PaymentRequest request) {
         BillResponse response = billingService.processPayment(billId, request);
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -51,7 +51,7 @@ public class BillController implements BillApi {
     }
 
     @Override
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasRole('BILLING_OFFICER')")
     public ResponseEntity<ApiResponse<BillResponse>> recordBillPrint(UUID billId) {
         return ResponseEntity.ok(ApiResponse.success(billingService.recordBillPrint(billId)));
     }

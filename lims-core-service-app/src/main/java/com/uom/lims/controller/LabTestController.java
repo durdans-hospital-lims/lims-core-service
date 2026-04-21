@@ -22,7 +22,7 @@ public class LabTestController implements LabTestApi {
     private final LabTestService labTestService;
 
     @Override
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasRole('BILLING_OFFICER')")
     public ResponseEntity<ApiResponse<List<LabTestResponse>>> getAllActiveTests() {
         return ResponseEntity.ok(ApiResponse.success(labTestService.getAllActiveTests()));
     }
