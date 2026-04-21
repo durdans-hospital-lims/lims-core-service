@@ -68,7 +68,7 @@ public class OrderService {
      * @return the created order mapped to a response DTO
      */
     public OrderResponse createOrder(OrderCreateRequest request) {
-        log.info("Creating order for patient {} by user {}", request.getPatientId(), securityUtils.getCurrentUsername());
+        log.info("AUDIT: Attempting to create order for patient {} by user {}", request.getPatientId(), securityUtils.getCurrentUsername());
 
         // Step 1: Resolve test catalog entries — fail fast if any testId is invalid or inactive.
         // WHY: Using findAllByIdInAndActiveTrueAndDeletedFalse avoids separate per-test queries.
@@ -163,8 +163,8 @@ public class OrderService {
             sampleRepository.save(sample);
         }
 
-        log.info("Order {} created successfully with bill for patient {}",
-                savedOrder.getOrderNo(), savedOrder.getPatientId());
+        log.info("AUDIT: Order [{}] created successfully with bill [{}] for patient [{}]", 
+                savedOrder.getOrderNo(), bill.getBillNo(), savedOrder.getPatientId());
 
         // Step 9: Map the saved entity to a response DTO, enriching items with test catalog data.
         return toResponse(savedOrder, testMap);
@@ -219,7 +219,7 @@ public class OrderService {
 
         order.setStatus(OrderStatus.CANCELLED);
         OrderEntity saved = orderRepository.save(order);
-        log.info("Order {} cancelled by {}", saved.getOrderNo(), securityUtils.getCurrentUsername());
+        log.info("AUDIT: Order [{}] cancelled by user [{}]", saved.getOrderNo(), securityUtils.getCurrentUsername());
         return toResponse(saved, null);
     }
 
