@@ -112,7 +112,7 @@ public class BillingService {
         bill.setTotalAmount(bill.getSubtotal().add(bill.getServiceCharge()).subtract(request.getDiscountAmount()));
 
         BillEntity saved = billRepository.save(bill);
-        log.info("AUDIT: Discount [{}] applied to bill [{}] by user [{}]", request.getDiscountAmount(),
+        log.info("Discount {} applied to bill {} by {}", request.getDiscountAmount(),
                 bill.getBillNo(), securityUtils.getCurrentUsername());
         return toResponse(saved);
     }
@@ -186,7 +186,7 @@ public class BillingService {
         }
 
         BillEntity saved = billRepository.save(bill);
-        log.info("AUDIT: Payment [{}] processed for bill [{}] - New Status: [{}] by user [{}]",
+        log.info("Payment {} processed for bill {} — new status: {} by {}",
                 request.getAmount(), bill.getBillNo(), saved.getPaymentStatus(),
                 securityUtils.getCurrentUsername());
         return toResponse(saved);
