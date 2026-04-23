@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Map;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import com.uom.lims.api.dto.response.ApiResponse;
 
 @Slf4j
 @RestControllerAdvice
@@ -157,6 +158,17 @@ public class GlobalExceptionHandler {
                                                 "status", HttpStatus.UNPROCESSABLE_ENTITY.value(),
                                                 "error", "Invalid State Transition",
                                                 "message", ex.getMessage()));
+        }
+
+        // WHY: Spring Security throws AccessDeniedException before reaching the controller.
+        // Without this handler it gets caught by the generic Exception handler returning 500.
+        // 403 correctly tells the frontend the user lacks the required role.
+        @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+        public ResponseEntity<ApiResponse<Object>> handleAccessDenied(
+                        org.springframework.security.access.AccessDeniedException ex) {
+                log.warn("Access denied for user: {}", ex.getMessage());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                                .body(ApiResponse.error("Access denied — insufficient permissions"));
         }
 
         @ExceptionHandler(Exception.class)

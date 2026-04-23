@@ -41,22 +41,22 @@ public class OrderController implements OrderApi {
         Sort springSort;
         try {
             String[] sortParts = sort.split(",");
-            springSort = Sort.by(sortParts.length > 1 && sortParts[1].equalsIgnoreCase("desc") 
-                    ? Sort.Direction.DESC : Sort.Direction.ASC, sortParts[0]);
+            springSort = Sort.by(sortParts.length > 1 && sortParts[1].equalsIgnoreCase("desc")
+                    ? Sort.Direction.DESC
+                    : Sort.Direction.ASC, sortParts[0]);
         } catch (Exception e) {
             springSort = Sort.by(Sort.Direction.DESC, "createdAt");
         }
-        
+
         Page<OrderResponse> result = orderService.getOrders(PageRequest.of(page, size, springSort));
-        
+
         PageResponse<OrderResponse> pageResponse = new PageResponse<>(
                 result.getContent(),
                 result.getNumber(),
                 result.getSize(),
                 result.getTotalElements(),
                 result.getTotalPages(),
-                result.isLast()
-        );
+                result.isLast());
         return ResponseEntity.ok(ApiResponse.success(pageResponse));
     }
 
@@ -67,7 +67,7 @@ public class OrderController implements OrderApi {
     }
 
     @Override
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasRole('BILLING_OFFICER')")
     public ResponseEntity<ApiResponse<OrderResponse>> cancelOrder(UUID id) {
         return ResponseEntity.ok(ApiResponse.success(orderService.cancelOrder(id)));
     }
