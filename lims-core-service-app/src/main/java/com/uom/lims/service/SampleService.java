@@ -8,13 +8,16 @@ import com.uom.lims.api.dto.response.SampleResponse;
 import com.uom.lims.api.enums.PaymentStatus;
 import com.uom.lims.api.enums.RejectionReason;
 import com.uom.lims.api.enums.SampleStatus;
+import com.uom.lims.api.patient.dto.response.PatientResponse;
 import com.uom.lims.entity.BillEntity;
 import com.uom.lims.entity.SampleEntity;
+import com.uom.lims.entity.TestCatalogEntity;
 import com.uom.lims.exception.BusinessValidationException;
 import com.uom.lims.exception.InvalidStateTransitionException;
 import com.uom.lims.exception.ResourceNotFoundException;
 import com.uom.lims.repository.BillRepository;
 import com.uom.lims.repository.SampleRepository;
+import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.util.ReferenceNumberGenerator;
 import com.uom.lims.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +45,8 @@ public class SampleService {
 
     private final SampleRepository sampleRepository;
     private final BillRepository billRepository;
+    private final TestCatalogRepository testCatalogRepository;
+    private final PatientClientService patientClientService;
     private final ReferenceNumberGenerator referenceNumberGenerator;
     private final SecurityUtils securityUtils;
 
@@ -210,14 +215,22 @@ public class SampleService {
                         : null)
                 .build();
 
+        TestCatalogEntity test = testCatalogRepository
+                .findById(sample.getOrderItem().getTestId()).orElse(null);
+
         return SampleResponse.builder()
                 .id(sample.getId())
                 .sampleId(sample.getBarcode())
                 .orderId(sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null
                         ? sample.getOrderItem().getOrder().getOrderNo()
                         : null)
+                .testType(test != null ? test.getTestName() : null)
+                .testCodes(test != null ? List.of(test.getTestCode()) : null)
                 .priority(sample.getPriority())
                 .tubeTypes(List.of(sample.getTubeType()))
+                .waitTimeMinutes(sample.getCreatedAt() != null ?
+                        java.time.temporal.ChronoUnit.MINUTES.between(
+                                sample.getCreatedAt(), Instant.now()) : 0)
                 .status(sample.getStatus())
                 .patient(patientInfo)
                 .collectedAt(sample.getCollectedAt())
@@ -234,15 +247,19 @@ public class SampleService {
      * @return the CollectionHistoryResponse DTO
      */
     private CollectionHistoryResponse toHistoryResponse(SampleEntity sample) {
+        String patientId = (sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null)
+                ? sample.getOrderItem().getOrder().getPatientId()
+                : null;
+
+        PatientResponse patient = patientId != null
+                ? patientClientService.getPatientByCode(patientId, securityUtils.getCurrentBearerToken())
+                : null;
+
         return CollectionHistoryResponse.builder()
                 .id(sample.getId())
                 .sampleId(sample.getBarcode())
-                .patientName(sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null
-                        ? sample.getOrderItem().getOrder().getPatientId()
-                        : null)
-                .pid(sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null
-                        ? sample.getOrderItem().getOrder().getPatientId()
-                        : null)
+                .patientName(patient != null ? patient.getFullName() : null)
+                .pid(patientId)
                 .priority(sample.getPriority())
                 .status(sample.getStatus())
                 .collectedAt(sample.getCollectedAt())
