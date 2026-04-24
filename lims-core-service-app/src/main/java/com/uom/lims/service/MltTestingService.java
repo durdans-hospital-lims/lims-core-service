@@ -12,11 +12,14 @@ import com.uom.lims.entity.SampleEntity;
 import com.uom.lims.entity.TestParameterEntity;
 import com.uom.lims.entity.TestResultEntity;
 import com.uom.lims.entity.TestCatalogEntity;
+import com.uom.lims.exception.BusinessRuleException;
 import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.repository.SampleRepository;
 import com.uom.lims.repository.TestParameterRepository;
 import com.uom.lims.repository.TestResultRepository;
-import com.uom.lims.exception.BusinessRuleException;
+import com.uom.lims.patient.PatientRepository;
+import com.uom.lims.patient.PatientEntity;
+import com.uom.lims.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,16 +35,22 @@ public class MltTestingService {
         private final TestParameterRepository parameterRepository;
         private final TestResultRepository resultRepository;
         private final TestCatalogRepository testCatalogRepository;
+        private final PatientRepository patientRepository;
 
         @Transactional(readOnly = true)
         public SampleResultsResponse getSampleResults(UUID sampleId) {
 
                 SampleEntity sample = sampleRepository.findById(sampleId)
-                                .orElseThrow(() -> new RuntimeException("Sample not found"));
+                                .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
 
                 UUID testId = sample.getOrderItem().getTestId();
                 TestCatalogEntity testCatalog = testCatalogRepository.findById(testId)
-                                .orElseThrow(() -> new RuntimeException("Test catalog not found"));
+                                .orElseThrow(() -> new ResourceNotFoundException("Test catalog not found"));
+
+                String patientName = patientRepository
+                                .findById(UUID.fromString(sample.getOrderItem().getOrder().getPatientId()))
+                                .map(PatientEntity::getFullName)
+                                .orElse("UNKNOWN_PATIENT");
 
                 List<TestParameterEntity> parameters = parameterRepository.findByTestIdOrderByDisplayOrderAsc(testId);
 
@@ -68,7 +77,7 @@ public class MltTestingService {
                                 sample.getBarcode(),
                                 sample.getOrderItem().getOrder().getId(),
                                 sample.getOrderItem().getId(),
-                                sample.getOrderItem().getOrder().getPatientId(),
+                                patientName,
                                 testCatalog.getTestName(),
                                 sample.getStatus().name(),
                                 resultResponses,
@@ -77,11 +86,20 @@ public class MltTestingService {
 
         @Transactional
         public void submitResults(UUID sampleId, SubmitResultsRequest request) {
+                processResults(sampleId, request, false);
+        }
 
+        @Transactional
+        public void saveDraftResults(UUID sampleId, SubmitResultsRequest request) {
+                processResults(sampleId, request, true);
+        }
+
+        private void processResults(UUID sampleId, SubmitResultsRequest request, boolean isDraft) {
                 SampleEntity sample = sampleRepository.findById(sampleId)
-                                .orElseThrow(() -> new RuntimeException("Sample not found"));
+                                .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
 
-                if (sample.getStatus() != SampleStatus.ACCEPTED && sample.getStatus() != SampleStatus.IN_TESTING) {
+                if (!isDraft && sample.getStatus() != SampleStatus.ACCEPTED
+                                && sample.getStatus() != SampleStatus.IN_TESTING) {
                         throw new BusinessRuleException(
                                         "Results can only be submitted for ACCEPTED or IN_TESTING samples");
                 }
@@ -93,7 +111,7 @@ public class MltTestingService {
                 for (ResultItemRequest item : request.results()) {
 
                         TestParameterEntity parameter = parameterRepository.findById(item.parameterId())
-                                        .orElseThrow(() -> new RuntimeException("Parameter not found"));
+                                        .orElseThrow(() -> new ResourceNotFoundException("Parameter not found"));
 
                         UUID sampleTestId = sample.getOrderItem().getTestId();
 
@@ -109,7 +127,7 @@ public class MltTestingService {
                         result.setParameter(parameter);
                         result.setResultValue(item.result());
                         result.setMltNotes(request.mltNotes());
-                        result.setDraft(false);
+                        result.setDraft(isDraft);
 
                         if (item.flag() != null && !item.flag().isBlank()) {
                                 result.setFlag(ResultFlag.valueOf(item.flag()));
@@ -120,17 +138,25 @@ public class MltTestingService {
                         resultRepository.save(result);
                 }
 
-                sample.setStatus(SampleStatus.RESULT_ENTERED);
-                sampleRepository.save(sample);
+                if (!isDraft) {
+                        sample.setStatus(SampleStatus.RESULT_ENTERED);
+                        sampleRepository.save(sample);
+                }
         }
 
         @Transactional(readOnly = true)
         public List<MltWorklistItemResponse> getWorklist() {
-
-                List<SampleStatus> statuses = List.of(
-                                SampleStatus.COLLECTED,
+                return getWorklistByStatuses(List.of(
                                 SampleStatus.ACCEPTED,
-                                SampleStatus.IN_TESTING);
+                                SampleStatus.IN_TESTING));
+        }
+
+        @Transactional(readOnly = true)
+        public List<MltWorklistItemResponse> getCollectedSamples() {
+                return getWorklistByStatuses(List.of(SampleStatus.COLLECTED));
+        }
+
+        private List<MltWorklistItemResponse> getWorklistByStatuses(List<SampleStatus> statuses) {
 
                 List<SampleEntity> samples = sampleRepository
                                 .findByStatusInAndDeletedFalseOrderByCollectedAtAsc(statuses);
@@ -155,7 +181,7 @@ public class MltTestingService {
         public void acceptSample(UUID sampleId) {
 
                 SampleEntity sample = sampleRepository.findById(sampleId)
-                                .orElseThrow(() -> new RuntimeException("Sample not found"));
+                                .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
 
                 if (sample.getStatus() != SampleStatus.COLLECTED) {
                         throw new BusinessRuleException("Only COLLECTED samples can be accepted");
@@ -169,7 +195,7 @@ public class MltTestingService {
         public void rejectSample(UUID sampleId, SampleRejectRequest request) {
 
                 SampleEntity sample = sampleRepository.findById(sampleId)
-                                .orElseThrow(() -> new RuntimeException("Sample not found"));
+                                .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
 
                 if (sample.getStatus() != SampleStatus.COLLECTED) {
                         throw new BusinessRuleException("Only COLLECTED samples can be rejected");

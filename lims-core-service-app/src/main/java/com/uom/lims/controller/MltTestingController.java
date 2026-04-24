@@ -27,6 +27,14 @@ public class MltTestingController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/samples/{id}/results/draft")
+    public ResponseEntity<Void> saveDraftResults(
+            @PathVariable UUID id,
+            @Valid @RequestBody SubmitResultsRequest request) {
+        mltTestingService.saveDraftResults(id, request);
+        return ResponseEntity.ok().build();
+    }
+
     @GetMapping("/samples/{id}/results")
     public ResponseEntity<SampleResultsResponse> getSampleResults(@PathVariable UUID id) {
         return ResponseEntity.ok(mltTestingService.getSampleResults(id));

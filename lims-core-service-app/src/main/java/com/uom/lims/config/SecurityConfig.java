@@ -39,12 +39,9 @@ public class SecurityConfig {
                         .requestMatchers("/email-verification-success.html", "/email-verification-error.html")
                         .permitAll()
 
-                        // TEMPORARY: allow local MLT testing endpoints
-                        .requestMatchers(HttpMethod.GET, "/api/v1/mlt/worklist").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/mlt/samples/*/results").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/mlt/samples/*/results").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/reception/samples/*/accept").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/reception/samples/*/reject").permitAll()
+                        // SECURE: MLT and Reception endpoints
+                        .requestMatchers("/api/v1/mlt/**").hasRole("MLT")
+                        .requestMatchers("/api/v1/reception/**").hasRole("LAB_RECEPTION")
 
                         // Secure ALL other API endpoints
                         .requestMatchers("/api/**").authenticated()
