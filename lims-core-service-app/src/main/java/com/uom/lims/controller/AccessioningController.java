@@ -1,0 +1,32 @@
+package com.uom.lims.controller;
+
+import com.uom.lims.api.dto.request.SampleRejectRequest;
+import com.uom.lims.service.MltTestingService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/reception/samples")
+@RequiredArgsConstructor
+public class AccessioningController {
+
+    private final MltTestingService mltTestingService;
+
+    @PostMapping("/{id}/accept")
+    public ResponseEntity<Void> acceptSample(@PathVariable UUID id) {
+        mltTestingService.acceptSample(id);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<Void> rejectSample(
+            @PathVariable UUID id,
+            @Valid @RequestBody SampleRejectRequest request) {
+        mltTestingService.rejectSample(id, request);
+        return ResponseEntity.ok().build();
+    }
+}
