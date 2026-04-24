@@ -16,6 +16,7 @@ import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.repository.SampleRepository;
 import com.uom.lims.repository.TestParameterRepository;
 import com.uom.lims.repository.TestResultRepository;
+import com.uom.lims.exception.BusinessRuleException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,14 +81,25 @@ public class MltTestingService {
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new RuntimeException("Sample not found"));
 
+                if (sample.getStatus() != SampleStatus.ACCEPTED && sample.getStatus() != SampleStatus.IN_TESTING) {
+                        throw new BusinessRuleException(
+                                        "Results can only be submitted for ACCEPTED or IN_TESTING samples");
+                }
+
                 if (!sample.getId().equals(request.sampleId())) {
-                        throw new RuntimeException("Sample ID mismatch");
+                        throw new BusinessRuleException("Sample ID mismatch");
                 }
 
                 for (ResultItemRequest item : request.results()) {
 
                         TestParameterEntity parameter = parameterRepository.findById(item.parameterId())
                                         .orElseThrow(() -> new RuntimeException("Parameter not found"));
+
+                        UUID sampleTestId = sample.getOrderItem().getTestId();
+
+                        if (!parameter.getTestId().equals(sampleTestId)) {
+                                throw new BusinessRuleException("Parameter does not belong to the sample's test");
+                        }
 
                         TestResultEntity result = resultRepository
                                         .findBySampleIdAndParameterId(sample.getId(), parameter.getId())
@@ -146,7 +158,7 @@ public class MltTestingService {
                                 .orElseThrow(() -> new RuntimeException("Sample not found"));
 
                 if (sample.getStatus() != SampleStatus.COLLECTED) {
-                        throw new RuntimeException("Only COLLECTED samples can be accepted");
+                        throw new BusinessRuleException("Only COLLECTED samples can be accepted");
                 }
 
                 sample.setStatus(SampleStatus.ACCEPTED);
@@ -160,7 +172,7 @@ public class MltTestingService {
                                 .orElseThrow(() -> new RuntimeException("Sample not found"));
 
                 if (sample.getStatus() != SampleStatus.COLLECTED) {
-                        throw new RuntimeException("Only COLLECTED samples can be rejected");
+                        throw new BusinessRuleException("Only COLLECTED samples can be rejected");
                 }
 
                 sample.setStatus(SampleStatus.REJECTED);
