@@ -2,7 +2,6 @@ package com.uom.lims.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
@@ -68,9 +67,14 @@ public class SecurityConfig {
                 return List.of();
             }
 
-            List<String> roles = (List<String>) realmAccess.get("roles");
+            Object rolesObj = realmAccess.get("roles");
+
+            if (!(rolesObj instanceof List<?> roles)) {
+                return List.of();
+            }
 
             return roles.stream()
+                    .map(Object::toString)
                     .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
                     .collect(Collectors.toList());
         });
