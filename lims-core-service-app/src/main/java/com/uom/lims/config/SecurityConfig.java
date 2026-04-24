@@ -2,6 +2,7 @@ package com.uom.lims.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
@@ -38,7 +39,11 @@ public class SecurityConfig {
                         .requestMatchers("/email-verification-success.html", "/email-verification-error.html")
                         .permitAll()
 
-                        // Secure ALL API endpoints
+                        // TEMPORARY: allow local MLT testing endpoints
+                        .requestMatchers(HttpMethod.GET, "/api/v1/mlt/samples/*/results").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/mlt/samples/*/results").permitAll()
+
+                        // Secure ALL other API endpoints
                         .requestMatchers("/api/**").authenticated()
 
                         // Everything else blocked
