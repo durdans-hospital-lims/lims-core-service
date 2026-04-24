@@ -65,12 +65,12 @@ spring:
           writetimeout: 30000
         debug: true
 
-
-
 app:
   billing:
     service-charge-percentage: 5
     overdue-threshold-hours: 24
+  services:
+    patient-base-url: http://localhost:11000
   kafka:
     lab-report-listener-enabled: false
     topics:
@@ -88,8 +88,6 @@ app:
       - jpeg
   verification:
     base-url: http://localhost:11000
-
-
 
 server:
   port: 11000

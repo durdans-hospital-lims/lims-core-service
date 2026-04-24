@@ -7,6 +7,7 @@ import com.uom.lims.api.enums.OrderStatus;
 import com.uom.lims.api.enums.PaymentStatus;
 import com.uom.lims.api.enums.Priority;
 import com.uom.lims.api.enums.SampleStatus;
+import com.uom.lims.api.patient.dto.response.PatientResponse;
 import com.uom.lims.config.BillingProperties;
 import com.uom.lims.entity.BillEntity;
 import com.uom.lims.entity.OrderEntity;
@@ -31,7 +32,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,6 +59,7 @@ public class OrderService {
     private final BillRepository billRepository;
     private final SampleRepository sampleRepository;
     private final ReferenceNumberGenerator referenceNumberGenerator;
+    private final PatientClientService patientClientService;
     private final SecurityUtils securityUtils;
     private final BillingProperties billingProperties;
 
@@ -181,7 +186,15 @@ public class OrderService {
     public Page<OrderResponse> getOrders(Pageable pageable) {
         // WHY: Spring Data JPA derivation — findAllByDeletedFalse scopes out soft-deleted records.
         return orderRepository.findAllByDeletedFalse(pageable)
-                .map(o -> toResponse(o, null));
+                .map(order -> {
+                    // Fetch test catalog for enrichment
+                    List<UUID> testIds = order.getItems().stream()
+                            .map(OrderItemEntity::getTestId).toList();
+                    Map<UUID, TestCatalogEntity> testMap = testCatalogRepository
+                            .findAllById(testIds).stream()
+                            .collect(Collectors.toMap(TestCatalogEntity::getId, Function.identity()));
+                    return toResponse(order, testMap);
+                });
     }
 
     /**
@@ -195,7 +208,15 @@ public class OrderService {
     public OrderResponse getOrderById(UUID id) {
         OrderEntity order = orderRepository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
-        return toResponse(order, null);
+
+        // Fetch test catalog for enrichment
+        List<UUID> testIds = order.getItems().stream()
+                .map(OrderItemEntity::getTestId).toList();
+        Map<UUID, TestCatalogEntity> testMap = testCatalogRepository
+                .findAllById(testIds).stream()
+                .collect(Collectors.toMap(TestCatalogEntity::getId, Function.identity()));
+
+        return toResponse(order, testMap);
     }
 
     /**
@@ -234,15 +255,29 @@ public class OrderService {
      * @return the OrderResponse DTO safe for exposure outside the service layer
      */
     private OrderResponse toResponse(OrderEntity order, Map<UUID, TestCatalogEntity> testMap) {
+        // Get patient details — graceful null if unavailable
+        PatientResponse patient = patientClientService
+                .getPatientByCode(order.getPatientId(), securityUtils.getCurrentBearerToken());
+
         List<OrderItemResponse> itemResponses = order.getItems().stream()
                 .map(item -> {
                     TestCatalogEntity test = testMap != null ? testMap.get(item.getTestId()) : null;
+
+                    // WHY: A rejected sample triggers a new collection, so an item can have multiple sample records.
+                    // We only display the latest active (non-rejected) sample barcode and status to the user.
+                    SampleEntity activeSample = item.getSamples().stream()
+                            .filter(s -> s.getStatus() != SampleStatus.REJECTED)
+                            .max(Comparator.comparing(SampleEntity::getCreatedAt))
+                            .orElse(null);
+
                     return OrderItemResponse.builder()
                             .testId(item.getTestId().toString())
                             .testCode(test != null ? test.getTestCode() : null)
                             .testName(test != null ? test.getTestName() : null)
                             .category(test != null ? test.getCategory() : null)
                             .price(item.getPrice())
+                            .sampleBarcode(activeSample != null ? activeSample.getBarcode() : null)
+                            .sampleStatus(activeSample != null ? activeSample.getStatus() : null)
                             .build();
                 })
                 .toList();
@@ -251,6 +286,11 @@ public class OrderService {
                 .id(order.getId())
                 .orderId(order.getOrderNo())
                 .patientId(order.getPatientId())
+                .patientName(patient != null ? patient.getFullName() : null)
+                .patientAge(patient != null && patient.getDob() != null ?
+                        Period.between(patient.getDob(), LocalDate.now()).getYears() : null)
+                .patientGender(patient != null && patient.getGender() != null ?
+                        patient.getGender().name() : null)
                 .orderDate(order.getCreatedAt() != null ? order.getCreatedAt().toString() : null)
                 .status(order.getStatus())
                 .priority(order.getPriority())

@@ -15,6 +15,9 @@ import java.util.stream.Collectors;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import java.util.Arrays;
 
 @Configuration
@@ -23,30 +26,21 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(csrf -> csrf.disable())
-
-                .authorizeHttpRequests(auth -> auth
-
-                        // Allow health / test endpoints if needed
-                        .requestMatchers("/actuator/**").permitAll()
-                        .requestMatchers("/test/**").permitAll()
-
-                        .requestMatchers("/api/v1/patients/verify-email").permitAll()
-                        .requestMatchers("/email-verification-success.html", "/email-verification-error.html")
-                        .permitAll()
-
-                        // Secure ALL API endpoints
-                        .requestMatchers("/api/**").authenticated()
-
-                        // Everything else blocked
-                        .anyRequest().denyAll())
-
-                .oauth2ResourceServer(
-                        oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
-
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(session ->
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/actuator/**").permitAll()
+                .requestMatchers("/test/**").permitAll()
+                .requestMatchers("/api/v1/patients/verify-email").permitAll()
+                .requestMatchers("/email-verification-success.html",
+                    "/email-verification-error.html").permitAll()
+                .anyRequest().authenticated())
+            .oauth2ResourceServer(oauth2 ->
+                oauth2.jwt(jwt ->
+                    jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
         return http.build();
     }
 
