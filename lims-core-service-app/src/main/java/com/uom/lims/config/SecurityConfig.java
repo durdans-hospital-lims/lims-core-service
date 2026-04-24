@@ -40,8 +40,11 @@ public class SecurityConfig {
                         .permitAll()
 
                         // TEMPORARY: allow local MLT testing endpoints
+                        .requestMatchers(HttpMethod.GET, "/api/v1/mlt/worklist").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/mlt/samples/*/results").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/mlt/samples/*/results").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/reception/samples/*/accept").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/reception/samples/*/reject").permitAll()
 
                         // Secure ALL other API endpoints
                         .requestMatchers("/api/**").authenticated()

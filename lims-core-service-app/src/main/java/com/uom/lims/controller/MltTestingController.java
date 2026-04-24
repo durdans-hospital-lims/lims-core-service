@@ -1,12 +1,13 @@
 package com.uom.lims.controller;
 
+import com.uom.lims.api.dto.response.MltWorklistItemResponse;
+import java.util.List;
 import com.uom.lims.api.dto.request.SubmitResultsRequest;
 import jakarta.validation.Valid;
 import com.uom.lims.api.dto.response.SampleResultsResponse;
 import com.uom.lims.service.MltTestingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -29,5 +30,10 @@ public class MltTestingController {
     @GetMapping("/samples/{id}/results")
     public ResponseEntity<SampleResultsResponse> getSampleResults(@PathVariable UUID id) {
         return ResponseEntity.ok(mltTestingService.getSampleResults(id));
+    }
+
+    @GetMapping("/worklist")
+    public ResponseEntity<List<MltWorklistItemResponse>> getWorklist() {
+        return ResponseEntity.ok(mltTestingService.getWorklist());
     }
 }
