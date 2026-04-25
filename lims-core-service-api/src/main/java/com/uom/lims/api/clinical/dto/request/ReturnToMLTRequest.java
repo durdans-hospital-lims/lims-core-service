@@ -5,18 +5,17 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotBlank;
 
 @Getter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class ReturnToMLTRequest {
-    @NotNull
     private String resultId;
 
-    @NotNull
     private String status;
 
+    @NotBlank
     private String returnReason;
 }
