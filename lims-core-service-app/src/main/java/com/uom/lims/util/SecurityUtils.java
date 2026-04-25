@@ -47,4 +47,18 @@ public class SecurityUtils {
         }
         return "system";
     }
+
+    /**
+     * WHY: Extracts the full Bearer token from the current security context
+     * to allow forwarding identity to downstream services (like patient-service).
+     *
+     * @return the full "Bearer <token>" string, or null if unauthenticated
+     */
+    public String getCurrentBearerToken() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth instanceof JwtAuthenticationToken jwtAuth) {
+            return "Bearer " + jwtAuth.getToken().getTokenValue();
+        }
+        return null;
+    }
 }
