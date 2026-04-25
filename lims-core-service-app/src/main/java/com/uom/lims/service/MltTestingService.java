@@ -20,11 +20,14 @@ import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.patient.PatientRepository;
 import com.uom.lims.patient.PatientEntity;
 import com.uom.lims.exception.ResourceNotFoundException;
+import com.uom.lims.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -36,6 +39,7 @@ public class MltTestingService {
         private final TestResultRepository resultRepository;
         private final TestCatalogRepository testCatalogRepository;
         private final PatientRepository patientRepository;
+        private final SecurityUtils securityUtils;
 
         @Transactional(readOnly = true)
         public SampleResultsResponse getSampleResults(UUID sampleId) {
@@ -130,7 +134,11 @@ public class MltTestingService {
                         result.setDraft(isDraft);
 
                         if (item.flag() != null && !item.flag().isBlank()) {
-                                result.setFlag(ResultFlag.valueOf(item.flag()));
+                                try {
+                                        result.setFlag(ResultFlag.valueOf(item.flag().trim().toUpperCase(Locale.ROOT)));
+                                } catch (IllegalArgumentException ex) {
+                                        throw new BusinessRuleException("Invalid result flag: " + item.flag());
+                                }
                         } else {
                                 result.setFlag(null);
                         }
@@ -201,9 +209,16 @@ public class MltTestingService {
                         throw new BusinessRuleException("Only COLLECTED samples can be rejected");
                 }
 
+                if (request.getRejectionReason() == com.uom.lims.api.enums.RejectionReason.OTHER
+                                && (request.getRejectionNotes() == null || request.getRejectionNotes().isBlank())) {
+                        throw new BusinessRuleException("Rejection notes are mandatory when rejection reason is OTHER");
+                }
+
                 sample.setStatus(SampleStatus.REJECTED);
                 sample.setRejectionReason(request.getRejectionReason());
                 sample.setRejectionNotes(request.getRejectionNotes());
+                sample.setRejectedAt(Instant.now());
+                sample.setRejectedBy(securityUtils.getCurrentUsername());
 
                 sampleRepository.save(sample);
         }
