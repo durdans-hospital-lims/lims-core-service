@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.7.xsd">
+
+    <changeSet id="20260424100001-create-test-result-parameters-table" author="S.K.L. Undulanga">
+
+        <createTable tableName="test_result_parameters">
+
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+
+            <column name="test_result_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="parameter_code" type="VARCHAR(100)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="parameter_name" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="result_value" type="DECIMAL(18,4)"/>
+
+            <column name="result_text" type="VARCHAR(500)"/>
+
+            <column name="unit" type="VARCHAR(50)"/>
+
+            <column name="reference_range_low" type="DECIMAL(18,4)"/>
+
+            <column name="reference_range_high" type="DECIMAL(18,4)"/>
+
+            <column name="flag" type="VARCHAR(20)"/>
+
+            <column name="is_abnormal" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="sort_order" type="INT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="created_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="updated_at" type="TIMESTAMP"/>
+
+            <column name="updated_by" type="VARCHAR(255)"/>
+
+            <column name="is_deleted" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="version" type="BIGINT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+
+        </createTable>
+
+        <addForeignKeyConstraint
+                baseTableName="test_result_parameters"
+                baseColumnNames="test_result_id"
+                referencedTableName="test_results"
+                referencedColumnNames="id"
+                constraintName="fk_test_result_parameters_test_result"/>
+
+        <createIndex
+                indexName="idx_trp_test_result_id"
+                tableName="test_result_parameters">
+            <column name="test_result_id"/>
+        </createIndex>
+
+        <createIndex
+                indexName="idx_trp_parameter_code"
+                tableName="test_result_parameters">
+            <column name="parameter_code"/>
+        </createIndex>
+
+        <createIndex
+                indexName="idx_trp_is_deleted"
+                tableName="test_result_parameters">
+            <column name="is_deleted"/>
+        </createIndex>
+
+    </changeSet>
+
+</databaseChangeLog>

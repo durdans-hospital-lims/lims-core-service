@@ -11,4 +11,7 @@
     <include file="liquibase/changelog/20260416120000_create_report_dispatch_tables.xml"/>
     <include file="liquibase/changelog/20260418120000_add_base_entity_shared_columns.xml"/>
     <include file="liquibase/changelog/20260418131000_create_orders_billing_tables.xml"/>
+    <include file="liquibase/changelog/20260424100000_create_test_results_table.xml"/>
+    <include file="liquibase/changelog/20260424100001_create_test_result_parameters_table.xml"/>
+    <include file="liquibase/changelog/20260425000000_add_dispatch_base_columns.xml"/>
 </databaseChangeLog>
