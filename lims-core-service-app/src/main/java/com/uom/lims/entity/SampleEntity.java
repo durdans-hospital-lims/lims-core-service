@@ -20,7 +20,8 @@ import lombok.Setter;
 import java.time.Instant;
 
 /**
- * WHY: Maps physical custody and handling properties for a clinical specimen tracking the medicolegal chain of custody.
+ * WHY: Maps physical custody and handling properties for a clinical specimen
+ * tracking the medicolegal chain of custody.
  */
 @Entity
 @Table(name = "samples")
@@ -28,7 +29,7 @@ import java.time.Instant;
 @Setter
 public class SampleEntity extends BaseEntity {
 
-    @OneToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_item_id", nullable = false)
     private OrderItemEntity orderItem;
 
@@ -70,4 +71,6 @@ public class SampleEntity extends BaseEntity {
     @Column(name = "rejection_reason")
     private RejectionReason rejectionReason;
 
+    @Column(name = "rejection_notes", length = 500)
+    private String rejectionNotes;
 }

@@ -1,5 +1,6 @@
 package com.uom.lims.api.dto.response;
 
+import com.uom.lims.api.enums.SampleStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -22,4 +23,6 @@ public class OrderItemResponse {
     private String testName;
     private String category;
     private BigDecimal price;
+    private String sampleBarcode;
+    private SampleStatus sampleStatus;
 }
