@@ -28,7 +28,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -57,24 +60,33 @@ public class MltTestingService {
                                 .orElse("UNKNOWN_PATIENT");
 
                 List<TestParameterEntity> parameters = parameterRepository.findByTestIdOrderByDisplayOrderAsc(testId);
+                Map<UUID, TestResultEntity> resultsByParameterId = resultRepository.findBySampleId(sample.getId()).stream()
+                                .collect(Collectors.toMap(
+                                                result -> result.getParameter().getId(),
+                                                Function.identity(),
+                                                (existing, replacement) -> replacement));
 
                 List<ResultParameterResponse> resultResponses = parameters.stream()
                                 .map(param -> {
 
-                                        var resultOpt = resultRepository
-                                                        .findBySampleIdAndParameterId(sample.getId(), param.getId());
+                                        TestResultEntity result = resultsByParameterId.get(param.getId());
 
                                         return new ResultParameterResponse(
                                                         param.getId(),
                                                         param.getName(),
-                                                        resultOpt.map(TestResultEntity::getResultValue).orElse(null),
+                                                        result != null ? result.getResultValue() : null,
                                                         param.getUnit(),
                                                         param.getRefLow(),
                                                         param.getRefHigh(),
-                                                        resultOpt.map(r -> r.getFlag() != null ? r.getFlag().name()
-                                                                        : null).orElse(null));
+                                                        result != null && result.getFlag() != null ? result.getFlag().name()
+                                                                        : null);
                                 })
                                 .toList();
+                String mltNotes = resultsByParameterId.values().stream()
+                                .map(TestResultEntity::getMltNotes)
+                                .filter(note -> note != null && !note.isBlank())
+                                .findFirst()
+                                .orElse(null);
 
                 return new SampleResultsResponse(
                                 sample.getId(),
@@ -85,7 +97,7 @@ public class MltTestingService {
                                 testCatalog.getTestName(),
                                 sample.getStatus().name(),
                                 resultResponses,
-                                null);
+                                mltNotes);
         }
 
         @Transactional
@@ -168,6 +180,15 @@ public class MltTestingService {
 
                 List<SampleEntity> samples = sampleRepository
                                 .findByStatusInAndDeletedFalseOrderByCollectedAtAsc(statuses);
+                List<UUID> testIds = samples.stream()
+                                .map(sample -> sample.getOrderItem().getTestId())
+                                .distinct()
+                                .toList();
+                Map<UUID, String> testNameById = testCatalogRepository.findAllById(testIds).stream()
+                                .collect(Collectors.toMap(
+                                                TestCatalogEntity::getId,
+                                                TestCatalogEntity::getTestName,
+                                                (existing, replacement) -> existing));
 
                 return samples.stream()
                                 .map(sample -> new MltWorklistItemResponse(
@@ -176,9 +197,8 @@ public class MltTestingService {
                                                 sample.getOrderItem().getOrder().getId(),
                                                 sample.getOrderItem().getId(),
                                                 sample.getOrderItem().getOrder().getPatientId(),
-                                                testCatalogRepository.findById(sample.getOrderItem().getTestId())
-                                                                .map(TestCatalogEntity::getTestName)
-                                                                .orElse("UNKNOWN_TEST"),
+                                                testNameById.getOrDefault(sample.getOrderItem().getTestId(),
+                                                                "UNKNOWN_TEST"),
                                                 sample.getPriority().name(),
                                                 sample.getStatus().name(),
                                                 sample.getCollectedAt()))
