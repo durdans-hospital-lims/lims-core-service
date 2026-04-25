@@ -7,14 +7,17 @@ import com.uom.lims.api.dto.response.OrderItemResponse;
 import com.uom.lims.api.dto.response.PaymentResponse;
 import com.uom.lims.api.enums.PaymentMethod;
 import com.uom.lims.api.enums.PaymentStatus;
+import com.uom.lims.api.patient.dto.response.PatientResponse;
 import com.uom.lims.config.BillingProperties;
 import com.uom.lims.entity.BillEntity;
 import com.uom.lims.entity.PaymentEntity;
+import com.uom.lims.entity.TestCatalogEntity;
 import com.uom.lims.exception.BusinessValidationException;
 import com.uom.lims.exception.ResourceNotFoundException;
 import com.uom.lims.repository.BillRepository;
 import com.uom.lims.repository.OrderRepository;
 import com.uom.lims.repository.PaymentRepository;
+import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +47,8 @@ public class BillingService {
     private final BillRepository billRepository;
     private final PaymentRepository paymentRepository;
     private final OrderRepository orderRepository;
+    private final TestCatalogRepository testCatalogRepository;
+    private final PatientClientService patientClientService;
     private final BillingProperties billingProperties;
     private final SecurityUtils securityUtils;
 
@@ -255,13 +260,25 @@ public class BillingService {
      * @return the BillResponse DTO safe for exposure outside the service layer
      */
     private BillResponse toResponse(BillEntity bill) {
+        // Get patient details — graceful null if unavailable
+        String patientId = bill.getOrder() != null ? bill.getOrder().getPatientId() : null;
+        PatientResponse patient = patientId != null
+                ? patientClientService.getPatientByCode(patientId, securityUtils.getCurrentBearerToken())
+                : null;
+
         // Map order items to line-item responses if the order is loaded.
         List<OrderItemResponse> itemResponses = bill.getOrder() != null && bill.getOrder().getItems() != null
                 ? bill.getOrder().getItems().stream()
-                        .map(item -> OrderItemResponse.builder()
-                                .testId(item.getTestId().toString())
-                                .price(item.getPrice())
-                                .build())
+                        .map(item -> {
+                            TestCatalogEntity test = testCatalogRepository.findById(item.getTestId()).orElse(null);
+                            return OrderItemResponse.builder()
+                                    .testId(item.getTestId().toString())
+                                    .testCode(test != null ? test.getTestCode() : null)
+                                    .testName(test != null ? test.getTestName() : null)
+                                    .category(test != null ? test.getCategory() : null)
+                                    .price(item.getPrice())
+                                    .build();
+                        })
                         .toList()
                 : List.of();
 
@@ -286,6 +303,8 @@ public class BillingService {
                 .billId(bill.getBillNo())
                 .orderId(bill.getOrder() != null ? bill.getOrder().getOrderNo() : null)
                 .patientId(bill.getOrder() != null ? bill.getOrder().getPatientId() : null)
+                .patientName(patient != null ? patient.getFullName() : null)
+                .patientPhone(patient != null ? patient.getPhone() : null)
                 .orderDate(bill.getOrder() != null ? bill.getOrder().getCreatedAt() : null)
                 .billDate(bill.getCreatedAt())
                 .subtotal(bill.getSubtotal())

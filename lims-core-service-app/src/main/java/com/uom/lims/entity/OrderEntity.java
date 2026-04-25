@@ -19,7 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * WHY: Serves as the aggregate root for a clinical encounter mapping patient tests and tracking fulfillment status.
+ * WHY: Serves as the aggregate root for a clinical encounter mapping patient
+ * tests and tracking fulfillment status.
  */
 @Entity
 @Table(name = "orders")
