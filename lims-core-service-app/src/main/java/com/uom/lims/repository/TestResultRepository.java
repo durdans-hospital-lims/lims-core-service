@@ -1,6 +1,9 @@
 package com.uom.lims.repository;
 
+import com.uom.lims.api.verification.enums.ResultStatus;
 import com.uom.lims.entity.TestResultEntity;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -12,4 +15,6 @@ public interface TestResultRepository extends JpaRepository<TestResultEntity, UU
     List<TestResultEntity> findBySampleId(UUID sampleId);
 
     Optional<TestResultEntity> findBySampleIdAndParameterId(UUID sampleId, UUID parameterId);
+
+    Page<TestResultEntity> findByStatusAndDraftFalse(ResultStatus status, Pageable pageable);
 }

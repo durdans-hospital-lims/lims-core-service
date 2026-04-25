@@ -8,6 +8,7 @@ import com.uom.lims.api.dto.response.ResultParameterResponse;
 import com.uom.lims.api.dto.response.SampleResultsResponse;
 import com.uom.lims.api.enums.ResultFlag;
 import com.uom.lims.api.enums.SampleStatus;
+import com.uom.lims.api.verification.enums.ResultStatus;
 import com.uom.lims.entity.SampleEntity;
 import com.uom.lims.entity.TestParameterEntity;
 import com.uom.lims.entity.TestResultEntity;
@@ -144,6 +145,7 @@ public class MltTestingService {
                         result.setResultValue(item.result());
                         result.setMltNotes(request.mltNotes());
                         result.setDraft(isDraft);
+                        result.setStatus(isDraft ? null : ResultStatus.ENTERED);
 
                         if (item.flag() != null && !item.flag().isBlank()) {
                                 try {
@@ -159,7 +161,7 @@ public class MltTestingService {
                 }
 
                 if (!isDraft) {
-                        sample.setStatus(SampleStatus.RESULT_ENTERED);
+                        sample.setStatus(SampleStatus.SENT_FOR_VERIFICATION);
                         sampleRepository.save(sample);
                 }
         }
