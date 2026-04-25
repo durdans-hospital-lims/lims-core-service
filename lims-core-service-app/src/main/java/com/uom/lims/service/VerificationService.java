@@ -4,11 +4,10 @@ import com.uom.lims.api.verification.dto.request.BulkVerificationRequest;
 import com.uom.lims.api.verification.dto.request.VerificationRequest;
 import com.uom.lims.api.verification.dto.response.TestResultDetailResponse;
 import com.uom.lims.api.verification.dto.response.TestResultSummaryResponse;
+import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.api.verification.enums.ResultStatus;
 import com.uom.lims.entity.TestResultEntity;
-import com.uom.lims.entity.TestResultParameterEntity;
 import com.uom.lims.mapper.TestResultMapper;
-import com.uom.lims.repository.TestResultParameterRepository;
 import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -28,23 +26,19 @@ import java.util.UUID;
 public class VerificationService {
 
     private final TestResultRepository testResultRepository;
-    private final TestResultParameterRepository testResultParameterRepository;
     private final TestResultMapper testResultMapper;
 
     @Transactional(readOnly = true)
     public Page<TestResultSummaryResponse> getPendingResults(int page, int size) {
         return testResultRepository
-                .findByStatus(ResultStatus.ENTERED, PageRequest.of(page, size))
+                .findByStatusAndDraftFalse(ResultStatus.ENTERED, PageRequest.of(page, size))
                 .map(testResultMapper::toSummaryResponse);
     }
 
     @Transactional(readOnly = true)
     public TestResultDetailResponse getResultDetails(UUID resultId) {
         TestResultEntity result = findResultById(resultId);
-        List<TestResultParameterEntity> parameters =
-                testResultParameterRepository.findByTestResultOrderBySortOrderAsc(result);
-
-        return testResultMapper.toDetailResponse(result, parameters);
+        return testResultMapper.toDetailResponse(result);
     }
 
     @Transactional
@@ -60,17 +54,15 @@ public class VerificationService {
         Instant now = Instant.now();
 
         result.setStatus(ResultStatus.TECHNICALLY_VERIFIED);
+        result.getSample().setStatus(SampleStatus.VERIFIED);
         result.setMltNotes(request.getMltNotes());
         result.setTechnicallyVerifiedBy(username);
         result.setTechnicallyVerifiedAt(now);
-        result.setUpdatedBy(username);
-        result.setUpdatedAt(now);
+        result.setLastModifiedBy(username);
+        result.setLastModifiedAt(now);
 
         TestResultEntity saved = testResultRepository.save(result);
-        List<TestResultParameterEntity> parameters =
-                testResultParameterRepository.findByTestResultOrderBySortOrderAsc(saved);
-
-        return testResultMapper.toDetailResponse(saved, parameters);
+        return testResultMapper.toDetailResponse(saved);
     }
 
     @Transactional
@@ -86,17 +78,15 @@ public class VerificationService {
         Instant now = Instant.now();
 
         result.setStatus(ResultStatus.REJECTED);
+        result.getSample().setStatus(SampleStatus.REJECTED);
         result.setMltNotes(request.getMltNotes());
         result.setTechnicallyVerifiedBy(username);
         result.setTechnicallyVerifiedAt(now);
-        result.setUpdatedBy(username);
-        result.setUpdatedAt(now);
+        result.setLastModifiedBy(username);
+        result.setLastModifiedAt(now);
 
         TestResultEntity saved = testResultRepository.save(result);
-        List<TestResultParameterEntity> parameters =
-                testResultParameterRepository.findByTestResultOrderBySortOrderAsc(saved);
-
-        return testResultMapper.toDetailResponse(saved, parameters);
+        return testResultMapper.toDetailResponse(saved);
     }
 
     @Transactional
@@ -104,9 +94,8 @@ public class VerificationService {
         Map<String, String> resultMap = new LinkedHashMap<>();
 
         for (String resultIdValue : request.getResultIds()) {
-            UUID resultId = UUID.fromString(resultIdValue);
-
             try {
+                UUID resultId = UUID.fromString(resultIdValue);
                 VerificationRequest verificationRequest = VerificationRequest.builder()
                         .mltNotes(request.getMltNotes())
                         .build();

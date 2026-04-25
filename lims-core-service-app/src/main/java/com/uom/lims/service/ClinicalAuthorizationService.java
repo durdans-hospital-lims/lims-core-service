@@ -4,11 +4,10 @@ import com.uom.lims.api.clinical.dto.request.ClinicalAuthRequest;
 import com.uom.lims.api.clinical.dto.request.ReturnToMLTRequest;
 import com.uom.lims.api.verification.dto.response.TestResultDetailResponse;
 import com.uom.lims.api.verification.dto.response.TestResultSummaryResponse;
+import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.api.verification.enums.ResultStatus;
 import com.uom.lims.entity.TestResultEntity;
-import com.uom.lims.entity.TestResultParameterEntity;
 import com.uom.lims.mapper.TestResultMapper;
-import com.uom.lims.repository.TestResultParameterRepository;
 import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 @RequiredArgsConstructor
@@ -26,23 +24,19 @@ import java.util.UUID;
 public class ClinicalAuthorizationService {
 
     private final TestResultRepository testResultRepository;
-    private final TestResultParameterRepository testResultParameterRepository;
     private final TestResultMapper testResultMapper;
 
     @Transactional(readOnly = true)
     public Page<TestResultSummaryResponse> getPendingResults(int page, int size) {
         return testResultRepository
-                .findByStatus(ResultStatus.TECHNICALLY_VERIFIED, PageRequest.of(page, size))
+                .findByStatusAndDraftFalse(ResultStatus.TECHNICALLY_VERIFIED, PageRequest.of(page, size))
                 .map(testResultMapper::toSummaryResponse);
     }
 
     @Transactional(readOnly = true)
     public TestResultDetailResponse getResultDetails(UUID resultId) {
         TestResultEntity result = findResultById(resultId);
-        List<TestResultParameterEntity> parameters =
-                testResultParameterRepository.findByTestResultOrderBySortOrderAsc(result);
-
-        return testResultMapper.toDetailResponse(result, parameters);
+        return testResultMapper.toDetailResponse(result);
     }
 
     @Transactional
@@ -59,17 +53,15 @@ public class ClinicalAuthorizationService {
         Instant now = Instant.now();
 
         result.setStatus(ResultStatus.CLINICALLY_AUTHORIZED);
+        result.getSample().setStatus(SampleStatus.AUTHORIZED);
         result.setClinicalNote(request.getClinicalNote());
         result.setClinicallyAuthorizedBy(username);
         result.setClinicallyAuthorizedAt(now);
-        result.setUpdatedBy(username);
-        result.setUpdatedAt(now);
+        result.setLastModifiedBy(username);
+        result.setLastModifiedAt(now);
 
         TestResultEntity saved = testResultRepository.save(result);
-        List<TestResultParameterEntity> parameters =
-                testResultParameterRepository.findByTestResultOrderBySortOrderAsc(saved);
-
-        return testResultMapper.toDetailResponse(saved, parameters);
+        return testResultMapper.toDetailResponse(saved);
     }
 
     @Transactional
@@ -86,17 +78,15 @@ public class ClinicalAuthorizationService {
         Instant now = Instant.now();
 
         result.setStatus(ResultStatus.RETURNED);
+        result.getSample().setStatus(SampleStatus.RESULT_ENTERED);
         result.setReturnReason(request.getReturnReason());
         result.setReturnedBy(username);
         result.setReturnedAt(now);
-        result.setUpdatedBy(username);
-        result.setUpdatedAt(now);
+        result.setLastModifiedBy(username);
+        result.setLastModifiedAt(now);
 
         TestResultEntity saved = testResultRepository.save(result);
-        List<TestResultParameterEntity> parameters =
-                testResultParameterRepository.findByTestResultOrderBySortOrderAsc(saved);
-
-        return testResultMapper.toDetailResponse(saved, parameters);
+        return testResultMapper.toDetailResponse(saved);
     }
 
     private TestResultEntity findResultById(UUID id) {
