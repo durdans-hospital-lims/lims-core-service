@@ -163,8 +163,7 @@ public class BranchManagementService {
                 branchCode, AccountStatus.INACTIVE);
         long suspendedUsers = branchUserRepository.countByBranchCodeAndAccountStatusAndDeletedFalse(
                 branchCode, AccountStatus.SUSPENDED);
-        long totalAuditLogs = auditLogRepository.findByBranchCode(branchCode, PageRequest.of(0, 1))
-                .getTotalElements();
+        long totalAuditLogs = auditLogRepository.countByBranchCode(branchCode);
 
         return BranchReportResponse.builder()
                 .branchCode(branchCode)
