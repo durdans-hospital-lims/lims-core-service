@@ -14,6 +14,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
 
         Page<AuditLog> findByBranchCode(String branchCode, Pageable pageable);
 
+        long countByBranchCode(String branchCode);
+
         @Query(value = "SELECT * FROM audit_log a WHERE a.branch_code = :branchCode " +
                         "AND (:action IS NULL OR a.action = CAST(:action AS VARCHAR)) " +
                         "AND (:entityType IS NULL OR a.entity_type = CAST(:entityType AS VARCHAR)) " +

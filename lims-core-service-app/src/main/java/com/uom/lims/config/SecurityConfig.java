@@ -38,6 +38,7 @@ public class SecurityConfig {
                 // Role-restricted endpoints
                 .requestMatchers("/api/v1/mlt/**").hasRole("MLT")
                 .requestMatchers("/api/v1/reception/**").hasRole("LAB_RECEPTION")
+                .requestMatchers("/api/v1/branch-management/**").hasRole("BRANCH_ADMIN")
 
                 // All other API endpoints require authentication
                 .requestMatchers("/api/**").authenticated()
