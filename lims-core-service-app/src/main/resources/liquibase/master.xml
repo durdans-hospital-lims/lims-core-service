@@ -17,4 +17,5 @@
     <include file="liquibase/changelog/20260424_create_test_results.xml"/>
     <include file="liquibase/changelog/20260424100000_create_test_result_workflow_columns.xml"/>
     <include file="liquibase/changelog/20260425000000_add_dispatch_base_columns.xml"/>
+    <include file="liquibase/changelog/20260425200000_create_branch_user_table.xml"/>
 </databaseChangeLog>
