@@ -1,14 +1,18 @@
 package com.uom.lims.entity;
 
+import com.uom.lims.api.verification.enums.ResultStatus;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.Where;
-import com.uom.lims.api.verification.enums.ResultStatus;
 
-import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -21,6 +25,7 @@ import java.util.UUID;
 @Table(name = "test_results")
 @Where(clause = "is_deleted = false")
 public class TestResultEntity extends BaseEntity {
+
     @Column(name = "order_item_id")
     private UUID orderItemId;
 
@@ -54,21 +59,4 @@ public class TestResultEntity extends BaseEntity {
 
     @Column(name = "returned_at")
     private Instant returnedAt;
-
-    // Alias methods for updated_at and updated_by (maps to JPA audit fields)
-    public Instant getUpdatedAt() {
-        return this.getLastModifiedAt();
-    }
-
-    public void setUpdatedAt(Instant updatedAt) {
-        this.setLastModifiedAt(updatedAt);
-    }
-
-    public String getUpdatedBy() {
-        return this.getLastModifiedBy();
-    }
-
-    public void setUpdatedBy(String updatedBy) {
-        this.setLastModifiedBy(updatedBy);
-    }
 }
