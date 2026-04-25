@@ -4,21 +4,18 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.http.HttpMethod;
-import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Configuration
 @EnableMethodSecurity
@@ -32,12 +29,21 @@ public class SecurityConfig {
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // Public endpoints
                 .requestMatchers("/actuator/**").permitAll()
                 .requestMatchers("/test/**").permitAll()
                 .requestMatchers("/api/v1/patients/verify-email").permitAll()
-                .requestMatchers("/email-verification-success.html",
-                    "/email-verification-error.html").permitAll()
-                .anyRequest().authenticated())
+                .requestMatchers("/email-verification-success.html", "/email-verification-error.html").permitAll()
+
+                // Role-restricted endpoints
+                .requestMatchers("/api/v1/mlt/**").hasRole("MLT")
+                .requestMatchers("/api/v1/reception/**").hasRole("LAB_RECEPTION")
+
+                // All other API endpoints require authentication
+                .requestMatchers("/api/**").authenticated()
+
+                // Block everything else
+                .anyRequest().denyAll())
             .oauth2ResourceServer(oauth2 ->
                 oauth2.jwt(jwt ->
                     jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
@@ -46,22 +52,25 @@ public class SecurityConfig {
 
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
-
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
 
         converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-
             Map<String, Object> realmAccess = jwt.getClaim("realm_access");
 
             if (realmAccess == null || realmAccess.get("roles") == null) {
                 return List.of();
             }
 
-            List<String> roles = (List<String>) realmAccess.get("roles");
+            Object rolesObj = realmAccess.get("roles");
+
+            if (!(rolesObj instanceof List<?> roles)) {
+                return List.of();
+            }
 
             return roles.stream()
-                    .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
-                    .collect(Collectors.toList());
+                .map(Object::toString)
+                .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                .collect(Collectors.toList());
         });
 
         return converter;
