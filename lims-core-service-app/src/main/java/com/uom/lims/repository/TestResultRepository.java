@@ -11,5 +11,7 @@ public interface TestResultRepository extends JpaRepository<TestResultEntity, UU
 
     List<TestResultEntity> findBySampleId(UUID sampleId);
 
+    List<TestResultEntity> findBySampleIdIn(List<UUID> sampleIds);
+
     Optional<TestResultEntity> findBySampleIdAndParameterId(UUID sampleId, UUID parameterId);
 }
