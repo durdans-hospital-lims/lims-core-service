@@ -26,10 +26,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -56,7 +59,7 @@ public class MltTestingService {
                                 .orElseThrow(() -> new ResourceNotFoundException("Test catalog not found"));
 
                 String patientName = patientRepository
-                                .findById(UUID.fromString(sample.getOrderItem().getOrder().getPatientId()))
+                                .findByPatientCode(sample.getOrderItem().getOrder().getPatientId())
                                 .map(PatientEntity::getFullName)
                                 .orElse("UNKNOWN_PATIENT");
 
@@ -115,22 +118,34 @@ public class MltTestingService {
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
 
-                if (!isDraft && sample.getStatus() != SampleStatus.ACCEPTED
-                                && sample.getStatus() != SampleStatus.IN_TESTING) {
+                if (isDraft) {
+                        if (sample.getStatus() != SampleStatus.ACCEPTED
+                                        && sample.getStatus() != SampleStatus.IN_TESTING) {
+                                throw new BusinessRuleException(
+                                                "Draft results can only be entered for ACCEPTED or IN_TESTING samples");
+                        }
+                } else if (sample.getStatus() != SampleStatus.IN_TESTING) {
                         throw new BusinessRuleException(
-                                        "Results can only be submitted for ACCEPTED or IN_TESTING samples");
+                                        "Final results can only be submitted for IN_TESTING samples");
                 }
 
                 if (!sample.getId().equals(request.sampleId())) {
                         throw new BusinessRuleException("Sample ID mismatch");
                 }
 
+                UUID sampleTestId = sample.getOrderItem().getTestId();
+                List<TestParameterEntity> testParameters = parameterRepository.findByTestIdOrderByDisplayOrderAsc(sampleTestId);
+
+                validateDuplicateParameterIds(request);
+
+                if (!isDraft) {
+                        validateFinalSubmissionCompleteness(request, testParameters);
+                }
+
                 for (ResultItemRequest item : request.results()) {
 
                         TestParameterEntity parameter = parameterRepository.findById(item.parameterId())
                                         .orElseThrow(() -> new ResourceNotFoundException("Parameter not found"));
-
-                        UUID sampleTestId = sample.getOrderItem().getTestId();
 
                         if (!parameter.getTestId().equals(sampleTestId)) {
                                 throw new BusinessRuleException("Parameter does not belong to the sample's test");
@@ -145,24 +160,48 @@ public class MltTestingService {
                         result.setResultValue(item.result());
                         result.setMltNotes(request.mltNotes());
                         result.setDraft(isDraft);
+                        result.setFlag(resolveResultFlag(item, parameter));
                         result.setStatus(isDraft ? null : ResultStatus.ENTERED);
 
-                        if (item.flag() != null && !item.flag().isBlank()) {
-                                try {
-                                        result.setFlag(ResultFlag.valueOf(item.flag().trim().toUpperCase(Locale.ROOT)));
-                                } catch (IllegalArgumentException ex) {
-                                        throw new BusinessRuleException("Invalid result flag: " + item.flag());
-                                }
-                        } else {
-                                result.setFlag(null);
-                        }
-
                         resultRepository.save(result);
+                }
+
+                if (isDraft && sample.getStatus() == SampleStatus.ACCEPTED) {
+                        sample.setStatus(SampleStatus.IN_TESTING);
+                        sampleRepository.save(sample);
                 }
 
                 if (!isDraft) {
                         sample.setStatus(SampleStatus.SENT_FOR_VERIFICATION);
                         sampleRepository.save(sample);
+                }
+        }
+
+        private void validateFinalSubmissionCompleteness(SubmitResultsRequest request,
+                        List<TestParameterEntity> testParameters) {
+                Set<UUID> submittedParameterIds = request.results().stream()
+                                .map(ResultItemRequest::parameterId)
+                                .collect(Collectors.toCollection(HashSet::new));
+
+                Set<UUID> expectedParameterIds = testParameters.stream()
+                                .map(TestParameterEntity::getId)
+                                .collect(Collectors.toSet());
+
+                if (!submittedParameterIds.containsAll(expectedParameterIds)
+                                || submittedParameterIds.size() != expectedParameterIds.size()) {
+                        throw new BusinessRuleException(
+                                        "All test parameters must be entered before final submission");
+                }
+        }
+
+        private void validateDuplicateParameterIds(SubmitResultsRequest request) {
+                Set<UUID> uniqueParameterIds = new HashSet<>();
+
+                for (ResultItemRequest item : request.results()) {
+                        if (!uniqueParameterIds.add(item.parameterId())) {
+                                throw new BusinessRuleException(
+                                                "Duplicate parameter entries are not allowed in the same submission");
+                        }
                 }
         }
 
@@ -243,5 +282,45 @@ public class MltTestingService {
                 sample.setRejectedBy(securityUtils.getCurrentUsername());
 
                 sampleRepository.save(sample);
+        }
+
+        private ResultFlag resolveResultFlag(ResultItemRequest item, TestParameterEntity parameter) {
+                BigDecimal numericResult = parseNumericResult(item.result());
+
+                if (numericResult != null) {
+                        if (parameter.getRefLow() != null && numericResult.compareTo(parameter.getRefLow()) < 0) {
+                                return ResultFlag.LOW;
+                        }
+
+                        if (parameter.getRefHigh() != null && numericResult.compareTo(parameter.getRefHigh()) > 0) {
+                                return ResultFlag.HIGH;
+                        }
+
+                        if (parameter.getRefLow() != null || parameter.getRefHigh() != null) {
+                                return ResultFlag.NORMAL;
+                        }
+                }
+
+                if (item.flag() != null && !item.flag().isBlank()) {
+                        try {
+                                return ResultFlag.valueOf(item.flag().trim().toUpperCase(Locale.ROOT));
+                        } catch (IllegalArgumentException ex) {
+                                throw new BusinessRuleException("Invalid result flag: " + item.flag());
+                        }
+                }
+
+                return null;
+        }
+
+        private BigDecimal parseNumericResult(String resultValue) {
+                if (resultValue == null || resultValue.isBlank()) {
+                        return null;
+                }
+
+                try {
+                        return new BigDecimal(resultValue.trim());
+                } catch (NumberFormatException ex) {
+                        return null;
+                }
         }
 }
