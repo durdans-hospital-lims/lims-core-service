@@ -24,29 +24,29 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .csrf(AbstractHttpConfigurer::disable)
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
-                // Public endpoints
-                .requestMatchers("/actuator/**").permitAll()
-                .requestMatchers("/test/**").permitAll()
-                .requestMatchers("/api/v1/patients/verify-email").permitAll()
-                .requestMatchers("/email-verification-success.html", "/email-verification-error.html").permitAll()
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        // Public endpoints
+                        .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/test/**").permitAll()
+                        .requestMatchers("/api/v1/patients/verify-email").permitAll()
+                        .requestMatchers("/email-verification-success.html", "/email-verification-error.html")
+                        .permitAll()
 
-                // Role-restricted endpoints
-                .requestMatchers("/api/v1/mlt/**").hasRole("MLT")
-                .requestMatchers("/api/v1/reception/**").hasRole("LAB_RECEPTION")
+                        // Role-restricted endpoints
+                        .requestMatchers("/api/v1/mlt/**").hasRole("MLT")
+                        .requestMatchers("/api/v1/reception/**").hasAnyRole("LAB_RECEPTIONIST", "LAB_RECEPTION")
+                        .requestMatchers("/api/v1/verification/**").hasRole("LAB_SUPERVISOR")
 
-                // All other API endpoints require authentication
-                .requestMatchers("/api/**").authenticated()
+                        // All other API endpoints require authentication
+                        .requestMatchers("/api/**").authenticated()
 
-                // Block everything else
-                .anyRequest().denyAll())
-            .oauth2ResourceServer(oauth2 ->
-                oauth2.jwt(jwt ->
-                    jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                        // Block everything else
+                        .anyRequest().denyAll())
+                .oauth2ResourceServer(
+                        oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
         return http.build();
     }
 
@@ -68,9 +68,9 @@ public class SecurityConfig {
             }
 
             return roles.stream()
-                .map(Object::toString)
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
-                .collect(Collectors.toList());
+                    .map(Object::toString)
+                    .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                    .collect(Collectors.toList());
         });
 
         return converter;
