@@ -20,10 +20,14 @@ import com.uom.lims.repository.SampleRepository;
 import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.util.ReferenceNumberGenerator;
 import com.uom.lims.util.SecurityUtils;
+import jakarta.persistence.criteria.JoinType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,6 +66,52 @@ public class SampleService {
     public Page<SampleResponse> getPendingSamples(Pageable pageable) {
         return sampleRepository.findAllByStatusAndDeletedFalse(SampleStatus.PENDING_COLLECTION, pageable)
                 .map(this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SampleResponse> searchSamplesForReprint(String query) {
+        String normalizedQuery = query == null ? "" : query.trim().toLowerCase();
+
+        if (normalizedQuery.isBlank()) {
+            return List.of();
+        }
+
+        Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Specification<SampleEntity> specification = (root, criteriaQuery, criteriaBuilder) -> {
+            var orderItemJoin = root.join("orderItem", JoinType.INNER);
+            var orderJoin = orderItemJoin.join("order", JoinType.INNER);
+
+            var testJoin = criteriaQuery.from(TestCatalogEntity.class);
+            var testLink = criteriaBuilder.equal(testJoin.get("id"), orderItemJoin.get("testId"));
+
+            String likeQuery = "%" + normalizedQuery + "%";
+
+            var barcodePredicate = criteriaBuilder.like(criteriaBuilder.lower(root.get("barcode")), likeQuery);
+            var patientPredicate = criteriaBuilder.like(criteriaBuilder.lower(orderJoin.get("patientId")), likeQuery);
+            var orderPredicate = criteriaBuilder.like(criteriaBuilder.lower(orderJoin.get("orderNo")), likeQuery);
+            var testNamePredicate = criteriaBuilder.like(criteriaBuilder.lower(testJoin.get("testName")), likeQuery);
+            var testCodePredicate = criteriaBuilder.like(criteriaBuilder.lower(testJoin.get("testCode")), likeQuery);
+            var notDeletedPredicate = criteriaBuilder.isFalse(root.get("deleted"));
+            var notRejectedPredicate = criteriaBuilder.notEqual(root.get("status"), SampleStatus.REJECTED);
+
+            criteriaQuery.distinct(true);
+
+            return criteriaBuilder.and(
+                    notDeletedPredicate,
+                    notRejectedPredicate,
+                    testLink,
+                    criteriaBuilder.or(
+                            barcodePredicate,
+                            patientPredicate,
+                            orderPredicate,
+                            testNamePredicate,
+                            testCodePredicate));
+        };
+
+        return sampleRepository.findAll(specification, pageable)
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     /**
