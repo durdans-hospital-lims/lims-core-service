@@ -29,6 +29,18 @@ public class AuditService {
             String patientCode,
             String details,
             String ipAddress) {
+        log(action, entityType, entityId, patientCode, details, ipAddress, null);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void log(
+            String action,
+            String entityType,
+            UUID entityId,
+            String patientCode,
+            String details,
+            String ipAddress,
+            String branchCodeOverride) {
         AuditLog auditLog = new AuditLog();
         auditLog.setAction(action);
         auditLog.setEntityType(entityType);
@@ -44,9 +56,17 @@ public class AuditService {
 
         try {
             String branchId = SecurityUtils.getCurrentBranchId();
-            auditLog.setBranchCode(branchId != null ? branchId : "SYSTEM");
+            if (branchCodeOverride != null && !branchCodeOverride.isBlank()) {
+                auditLog.setBranchCode(branchCodeOverride.trim().toUpperCase());
+            } else {
+                auditLog.setBranchCode(branchId != null ? branchId : "SYSTEM");
+            }
         } catch (Exception e) {
-            auditLog.setBranchCode("UNKNOWN");
+            if (branchCodeOverride != null && !branchCodeOverride.isBlank()) {
+                auditLog.setBranchCode(branchCodeOverride.trim().toUpperCase());
+            } else {
+                auditLog.setBranchCode("UNKNOWN");
+            }
         }
 
         auditLog.setIpAddress(ipAddress);

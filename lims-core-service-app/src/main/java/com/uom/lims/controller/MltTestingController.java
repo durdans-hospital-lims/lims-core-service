@@ -1,6 +1,7 @@
 package com.uom.lims.controller;
 
 import com.uom.lims.api.dto.response.MltWorklistItemResponse;
+import com.uom.lims.api.dto.response.MltAllWorklistItemResponse;
 import java.util.List;
 import com.uom.lims.api.dto.request.SubmitResultsRequest;
 import jakarta.validation.Valid;
@@ -8,6 +9,7 @@ import com.uom.lims.api.dto.response.SampleResultsResponse;
 import com.uom.lims.service.MltTestingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -15,6 +17,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/mlt")
 @RequiredArgsConstructor
+@PreAuthorize("hasAnyRole('MLT','LAB_SUPERVISOR','BRANCH_ADMIN','SUPER_ADMIN')")
 public class MltTestingController {
 
     private final MltTestingService mltTestingService;
@@ -43,5 +46,10 @@ public class MltTestingController {
     @GetMapping("/worklist")
     public ResponseEntity<List<MltWorklistItemResponse>> getWorklist() {
         return ResponseEntity.ok(mltTestingService.getWorklist());
+    }
+
+    @GetMapping("/all-worklist")
+    public ResponseEntity<List<MltAllWorklistItemResponse>> getAllWorklist() {
+        return ResponseEntity.ok(mltTestingService.getAllWorklist());
     }
 }
