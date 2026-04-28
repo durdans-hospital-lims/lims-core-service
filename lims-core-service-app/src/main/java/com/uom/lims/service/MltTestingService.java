@@ -1,13 +1,17 @@
 package com.uom.lims.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uom.lims.api.dto.request.ResultItemRequest;
 import com.uom.lims.api.dto.request.SampleRejectRequest;
+import com.uom.lims.api.dto.response.MltAllWorklistItemResponse;
 import com.uom.lims.api.dto.request.SubmitResultsRequest;
 import com.uom.lims.api.dto.response.MltWorklistItemResponse;
 import com.uom.lims.api.dto.response.ResultParameterResponse;
 import com.uom.lims.api.dto.response.SampleResultsResponse;
 import com.uom.lims.api.enums.ResultFlag;
 import com.uom.lims.api.enums.SampleStatus;
+import com.uom.lims.audit.AuditService;
 import com.uom.lims.api.verification.enums.ResultStatus;
 import com.uom.lims.entity.SampleEntity;
 import com.uom.lims.entity.TestParameterEntity;
@@ -28,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -47,6 +52,8 @@ public class MltTestingService {
         private final TestCatalogRepository testCatalogRepository;
         private final PatientRepository patientRepository;
         private final SecurityUtils securityUtils;
+        private final AuditService auditService;
+        private final ObjectMapper objectMapper;
 
         @Transactional(readOnly = true)
         public SampleResultsResponse getSampleResults(UUID sampleId) {
@@ -217,6 +224,56 @@ public class MltTestingService {
                 return getWorklistByStatuses(List.of(SampleStatus.COLLECTED));
         }
 
+        @Transactional(readOnly = true)
+        public List<MltAllWorklistItemResponse> getAllWorklist() {
+                List<SampleEntity> samples = sampleRepository.findByStatusInAndDeletedFalseOrderByCollectedAtAsc(List.of(
+                                SampleStatus.ACCEPTED,
+                                SampleStatus.IN_TESTING,
+                                SampleStatus.SENT_FOR_VERIFICATION));
+
+                List<UUID> testIds = samples.stream()
+                                .map(sample -> sample.getOrderItem().getTestId())
+                                .distinct()
+                                .toList();
+
+                Map<UUID, TestCatalogEntity> testsById = testCatalogRepository.findAllById(testIds).stream()
+                                .collect(Collectors.toMap(
+                                                TestCatalogEntity::getId,
+                                                Function.identity(),
+                                                (existing, replacement) -> existing));
+
+                List<String> patientCodes = samples.stream()
+                                .map(sample -> sample.getOrderItem().getOrder().getPatientId())
+                                .distinct()
+                                .toList();
+
+                Map<String, String> patientNameByCode = patientRepository.findAll().stream()
+                                .filter(patient -> patientCodes.contains(patient.getPatientCode()))
+                                .collect(Collectors.toMap(
+                                                PatientEntity::getPatientCode,
+                                                PatientEntity::getFullName,
+                                                (existing, replacement) -> existing));
+
+                return samples.stream()
+                                .map(sample -> {
+                                        TestCatalogEntity testCatalog = testsById.get(sample.getOrderItem().getTestId());
+                                        String patientCode = sample.getOrderItem().getOrder().getPatientId();
+
+                                        return new MltAllWorklistItemResponse(
+                                                        sample.getId(),
+                                                        sample.getBarcode(),
+                                                        sample.getOrderItem().getOrder().getOrderNo(),
+                                                        patientCode,
+                                                        patientNameByCode.getOrDefault(patientCode, "UNKNOWN_PATIENT"),
+                                                        testCatalog != null ? testCatalog.getTestName() : "UNKNOWN_TEST",
+                                                        testCatalog != null ? testCatalog.getCategory() : "General",
+                                                        sample.getPriority().name(),
+                                                        sample.getStatus().name(),
+                                                        sample.getCollectedAt());
+                                })
+                                .toList();
+        }
+
         private List<MltWorklistItemResponse> getWorklistByStatuses(List<SampleStatus> statuses) {
 
                 List<SampleEntity> samples = sampleRepository
@@ -235,7 +292,7 @@ public class MltTestingService {
                                 .map(sample -> new MltWorklistItemResponse(
                                                 sample.getId(),
                                                 sample.getBarcode(),
-                                                sample.getOrderItem().getOrder().getId(),
+                                                sample.getOrderItem().getOrder().getOrderNo(),
                                                 sample.getOrderItem().getId(),
                                                 sample.getOrderItem().getOrder().getPatientId(),
                                                 testNameById.getOrDefault(sample.getOrderItem().getTestId(),
@@ -258,6 +315,14 @@ public class MltTestingService {
 
                 sample.setStatus(SampleStatus.ACCEPTED);
                 sampleRepository.save(sample);
+
+                auditService.log(
+                                "ACCEPTED",
+                                "SAMPLE_ACCESSIONING",
+                                sample.getId(),
+                                sample.getOrderItem().getOrder().getPatientId(),
+                                buildAccessioningAuditDetails(sample, SampleStatus.ACCEPTED, null),
+                                null);
         }
 
         @Transactional
@@ -282,6 +347,39 @@ public class MltTestingService {
                 sample.setRejectedBy(securityUtils.getCurrentUsername());
 
                 sampleRepository.save(sample);
+
+                auditService.log(
+                                "REJECTED",
+                                "SAMPLE_ACCESSIONING",
+                                sample.getId(),
+                                sample.getOrderItem().getOrder().getPatientId(),
+                                buildAccessioningAuditDetails(sample, SampleStatus.REJECTED, request.getRejectionNotes()),
+                                null);
+        }
+
+        private String buildAccessioningAuditDetails(SampleEntity sample, SampleStatus status, String notes) {
+                String patientCode = sample.getOrderItem().getOrder().getPatientId();
+                String patientName = patientRepository.findByPatientCode(patientCode)
+                                .map(PatientEntity::getFullName)
+                                .orElse("UNKNOWN_PATIENT");
+                String testName = testCatalogRepository.findById(sample.getOrderItem().getTestId())
+                                .map(TestCatalogEntity::getTestName)
+                                .orElse("UNKNOWN_TEST");
+
+                Map<String, Object> details = new LinkedHashMap<>();
+                details.put("sampleId", sample.getBarcode());
+                details.put("patientName", patientName);
+                details.put("pid", patientCode);
+                details.put("testType", testName);
+                details.put("priority", sample.getPriority().name());
+                details.put("status", status.name());
+                details.put("notes", notes);
+
+                try {
+                        return objectMapper.writeValueAsString(details);
+                } catch (JsonProcessingException exception) {
+                        throw new BusinessRuleException("Could not create accessioning audit log details");
+                }
         }
 
         private ResultFlag resolveResultFlag(ResultItemRequest item, TestParameterEntity parameter) {
