@@ -1,6 +1,10 @@
 package com.uom.lims.audit;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uom.lims.api.common.PageResponse;
+import com.uom.lims.patient.PatientEntity;
+import com.uom.lims.patient.PatientRepository;
 import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +19,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -24,8 +29,10 @@ import java.util.stream.Collectors;
 public class AuditLogController {
 
     private final AuditLogRepository auditLogRepository;
+    private final PatientRepository patientRepository;
+    private final ObjectMapper objectMapper;
 
-    @PreAuthorize("hasAnyRole('FRONT_DESK','BRANCH_ADMIN','SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('LAB_RECEPTIONIST','LAB_RECEPTION','BRANCH_ADMIN','SUPER_ADMIN')")
     @GetMapping
     public PageResponse<AuditLogResponse> getAuditLogs(
             @RequestParam(required = false) String action,
@@ -53,11 +60,14 @@ public class AuditLogController {
                 String branchCode = SecurityUtils.getCurrentBranchId();
                 log.info("User requesting audit logs for branch: {}", branchCode);
                 if (branchCode == null || branchCode.isBlank()) {
-                    // If branch code is not available, return empty
-                    return new PageResponse<>(List.of(), page, size, 0, 0, true);
+                    branchCode = "SYSTEM";
+                    log.warn("Branch code missing from JWT. Falling back to audit branch scope: {}", branchCode);
+                    result = auditLogRepository.findByBranchCodeFiltered(branchCode, action, entityType, performedBy,
+                            search, pageable);
+                } else {
+                    result = auditLogRepository.findByBranchCodeFiltered(branchCode, action, entityType, performedBy,
+                            search, pageable);
                 }
-                result = auditLogRepository.findByBranchCodeFiltered(branchCode, action, entityType, performedBy,
-                        search, pageable);
             }
 
             List<AuditLogResponse> responses = result.getContent().stream()
@@ -107,7 +117,39 @@ public class AuditLogController {
         r.setBranchCode(auditLog.getBranchCode());
         r.setIpAddress(auditLog.getIpAddress());
         r.setTimestamp(auditLog.getTimestamp() != null ? auditLog.getTimestamp().toString() : "");
-        r.setDetails(auditLog.getDetails());
+        r.setDetails(enrichPatientNameInDetails(auditLog));
         return r;
+    }
+
+    private String enrichPatientNameInDetails(AuditLog auditLog) {
+        String details = auditLog.getDetails();
+        if (details == null || details.isBlank() || auditLog.getPatientCode() == null || auditLog.getPatientCode().isBlank()) {
+            return details;
+        }
+
+        try {
+            Map<String, Object> detailMap = objectMapper.readValue(details, new TypeReference<>() {
+            });
+            Object patientNameValue = detailMap.get("patientName");
+            String patientName = patientNameValue != null ? patientNameValue.toString() : null;
+
+            if (patientName != null && !patientName.isBlank() && !"UNKNOWN_PATIENT".equals(patientName)) {
+                return details;
+            }
+
+            String resolvedPatientName = patientRepository.findByPatientCode(auditLog.getPatientCode())
+                    .map(PatientEntity::getFullName)
+                    .orElse(null);
+
+            if (resolvedPatientName == null || resolvedPatientName.isBlank()) {
+                return details;
+            }
+
+            detailMap.put("patientName", resolvedPatientName);
+            return objectMapper.writeValueAsString(detailMap);
+        } catch (Exception exception) {
+            log.warn("Could not enrich patient name for audit log {}", auditLog.getId(), exception);
+            return details;
+        }
     }
 }
