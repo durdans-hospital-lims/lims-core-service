@@ -1,13 +1,17 @@
 package com.uom.lims.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uom.lims.api.dto.request.ResultItemRequest;
 import com.uom.lims.api.dto.request.SampleRejectRequest;
+import com.uom.lims.api.dto.response.MltAllWorklistItemResponse;
 import com.uom.lims.api.dto.request.SubmitResultsRequest;
 import com.uom.lims.api.dto.response.MltWorklistItemResponse;
 import com.uom.lims.api.dto.response.ResultParameterResponse;
 import com.uom.lims.api.dto.response.SampleResultsResponse;
 import com.uom.lims.api.enums.ResultFlag;
 import com.uom.lims.api.enums.SampleStatus;
+import com.uom.lims.audit.AuditService;
 import com.uom.lims.api.verification.enums.ResultStatus;
 import com.uom.lims.entity.SampleEntity;
 import com.uom.lims.entity.TestParameterEntity;
@@ -26,10 +30,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -44,6 +52,8 @@ public class MltTestingService {
         private final TestCatalogRepository testCatalogRepository;
         private final PatientRepository patientRepository;
         private final SecurityUtils securityUtils;
+        private final AuditService auditService;
+        private final ObjectMapper objectMapper;
 
         @Transactional(readOnly = true)
         public SampleResultsResponse getSampleResults(UUID sampleId) {
@@ -56,7 +66,7 @@ public class MltTestingService {
                                 .orElseThrow(() -> new ResourceNotFoundException("Test catalog not found"));
 
                 String patientName = patientRepository
-                                .findById(UUID.fromString(sample.getOrderItem().getOrder().getPatientId()))
+                                .findByPatientCode(sample.getOrderItem().getOrder().getPatientId())
                                 .map(PatientEntity::getFullName)
                                 .orElse("UNKNOWN_PATIENT");
 
@@ -115,22 +125,34 @@ public class MltTestingService {
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
 
-                if (!isDraft && sample.getStatus() != SampleStatus.ACCEPTED
-                                && sample.getStatus() != SampleStatus.IN_TESTING) {
+                if (isDraft) {
+                        if (sample.getStatus() != SampleStatus.ACCEPTED
+                                        && sample.getStatus() != SampleStatus.IN_TESTING) {
+                                throw new BusinessRuleException(
+                                                "Draft results can only be entered for ACCEPTED or IN_TESTING samples");
+                        }
+                } else if (sample.getStatus() != SampleStatus.IN_TESTING) {
                         throw new BusinessRuleException(
-                                        "Results can only be submitted for ACCEPTED or IN_TESTING samples");
+                                        "Final results can only be submitted for IN_TESTING samples");
                 }
 
                 if (!sample.getId().equals(request.sampleId())) {
                         throw new BusinessRuleException("Sample ID mismatch");
                 }
 
+                UUID sampleTestId = sample.getOrderItem().getTestId();
+                List<TestParameterEntity> testParameters = parameterRepository.findByTestIdOrderByDisplayOrderAsc(sampleTestId);
+
+                validateDuplicateParameterIds(request);
+
+                if (!isDraft) {
+                        validateFinalSubmissionCompleteness(request, testParameters);
+                }
+
                 for (ResultItemRequest item : request.results()) {
 
                         TestParameterEntity parameter = parameterRepository.findById(item.parameterId())
                                         .orElseThrow(() -> new ResourceNotFoundException("Parameter not found"));
-
-                        UUID sampleTestId = sample.getOrderItem().getTestId();
 
                         if (!parameter.getTestId().equals(sampleTestId)) {
                                 throw new BusinessRuleException("Parameter does not belong to the sample's test");
@@ -145,24 +167,48 @@ public class MltTestingService {
                         result.setResultValue(item.result());
                         result.setMltNotes(request.mltNotes());
                         result.setDraft(isDraft);
+                        result.setFlag(resolveResultFlag(item, parameter));
                         result.setStatus(isDraft ? null : ResultStatus.ENTERED);
 
-                        if (item.flag() != null && !item.flag().isBlank()) {
-                                try {
-                                        result.setFlag(ResultFlag.valueOf(item.flag().trim().toUpperCase(Locale.ROOT)));
-                                } catch (IllegalArgumentException ex) {
-                                        throw new BusinessRuleException("Invalid result flag: " + item.flag());
-                                }
-                        } else {
-                                result.setFlag(null);
-                        }
-
                         resultRepository.save(result);
+                }
+
+                if (isDraft && sample.getStatus() == SampleStatus.ACCEPTED) {
+                        sample.setStatus(SampleStatus.IN_TESTING);
+                        sampleRepository.save(sample);
                 }
 
                 if (!isDraft) {
                         sample.setStatus(SampleStatus.SENT_FOR_VERIFICATION);
                         sampleRepository.save(sample);
+                }
+        }
+
+        private void validateFinalSubmissionCompleteness(SubmitResultsRequest request,
+                        List<TestParameterEntity> testParameters) {
+                Set<UUID> submittedParameterIds = request.results().stream()
+                                .map(ResultItemRequest::parameterId)
+                                .collect(Collectors.toCollection(HashSet::new));
+
+                Set<UUID> expectedParameterIds = testParameters.stream()
+                                .map(TestParameterEntity::getId)
+                                .collect(Collectors.toSet());
+
+                if (!submittedParameterIds.containsAll(expectedParameterIds)
+                                || submittedParameterIds.size() != expectedParameterIds.size()) {
+                        throw new BusinessRuleException(
+                                        "All test parameters must be entered before final submission");
+                }
+        }
+
+        private void validateDuplicateParameterIds(SubmitResultsRequest request) {
+                Set<UUID> uniqueParameterIds = new HashSet<>();
+
+                for (ResultItemRequest item : request.results()) {
+                        if (!uniqueParameterIds.add(item.parameterId())) {
+                                throw new BusinessRuleException(
+                                                "Duplicate parameter entries are not allowed in the same submission");
+                        }
                 }
         }
 
@@ -176,6 +222,56 @@ public class MltTestingService {
         @Transactional(readOnly = true)
         public List<MltWorklistItemResponse> getCollectedSamples() {
                 return getWorklistByStatuses(List.of(SampleStatus.COLLECTED));
+        }
+
+        @Transactional(readOnly = true)
+        public List<MltAllWorklistItemResponse> getAllWorklist() {
+                List<SampleEntity> samples = sampleRepository.findByStatusInAndDeletedFalseOrderByCollectedAtAsc(List.of(
+                                SampleStatus.ACCEPTED,
+                                SampleStatus.IN_TESTING,
+                                SampleStatus.SENT_FOR_VERIFICATION));
+
+                List<UUID> testIds = samples.stream()
+                                .map(sample -> sample.getOrderItem().getTestId())
+                                .distinct()
+                                .toList();
+
+                Map<UUID, TestCatalogEntity> testsById = testCatalogRepository.findAllById(testIds).stream()
+                                .collect(Collectors.toMap(
+                                                TestCatalogEntity::getId,
+                                                Function.identity(),
+                                                (existing, replacement) -> existing));
+
+                List<String> patientCodes = samples.stream()
+                                .map(sample -> sample.getOrderItem().getOrder().getPatientId())
+                                .distinct()
+                                .toList();
+
+                Map<String, String> patientNameByCode = patientRepository.findAll().stream()
+                                .filter(patient -> patientCodes.contains(patient.getPatientCode()))
+                                .collect(Collectors.toMap(
+                                                PatientEntity::getPatientCode,
+                                                PatientEntity::getFullName,
+                                                (existing, replacement) -> existing));
+
+                return samples.stream()
+                                .map(sample -> {
+                                        TestCatalogEntity testCatalog = testsById.get(sample.getOrderItem().getTestId());
+                                        String patientCode = sample.getOrderItem().getOrder().getPatientId();
+
+                                        return new MltAllWorklistItemResponse(
+                                                        sample.getId(),
+                                                        sample.getBarcode(),
+                                                        sample.getOrderItem().getOrder().getOrderNo(),
+                                                        patientCode,
+                                                        patientNameByCode.getOrDefault(patientCode, "UNKNOWN_PATIENT"),
+                                                        testCatalog != null ? testCatalog.getTestName() : "UNKNOWN_TEST",
+                                                        testCatalog != null ? testCatalog.getCategory() : "General",
+                                                        sample.getPriority().name(),
+                                                        sample.getStatus().name(),
+                                                        sample.getCollectedAt());
+                                })
+                                .toList();
         }
 
         private List<MltWorklistItemResponse> getWorklistByStatuses(List<SampleStatus> statuses) {
@@ -196,7 +292,7 @@ public class MltTestingService {
                                 .map(sample -> new MltWorklistItemResponse(
                                                 sample.getId(),
                                                 sample.getBarcode(),
-                                                sample.getOrderItem().getOrder().getId(),
+                                                sample.getOrderItem().getOrder().getOrderNo(),
                                                 sample.getOrderItem().getId(),
                                                 sample.getOrderItem().getOrder().getPatientId(),
                                                 testNameById.getOrDefault(sample.getOrderItem().getTestId(),
@@ -219,6 +315,14 @@ public class MltTestingService {
 
                 sample.setStatus(SampleStatus.ACCEPTED);
                 sampleRepository.save(sample);
+
+                auditService.log(
+                                "ACCEPTED",
+                                "SAMPLE_ACCESSIONING",
+                                sample.getId(),
+                                sample.getOrderItem().getOrder().getPatientId(),
+                                buildAccessioningAuditDetails(sample, SampleStatus.ACCEPTED, null),
+                                null);
         }
 
         @Transactional
@@ -243,5 +347,78 @@ public class MltTestingService {
                 sample.setRejectedBy(securityUtils.getCurrentUsername());
 
                 sampleRepository.save(sample);
+
+                auditService.log(
+                                "REJECTED",
+                                "SAMPLE_ACCESSIONING",
+                                sample.getId(),
+                                sample.getOrderItem().getOrder().getPatientId(),
+                                buildAccessioningAuditDetails(sample, SampleStatus.REJECTED, request.getRejectionNotes()),
+                                null);
+        }
+
+        private String buildAccessioningAuditDetails(SampleEntity sample, SampleStatus status, String notes) {
+                String patientCode = sample.getOrderItem().getOrder().getPatientId();
+                String patientName = patientRepository.findByPatientCode(patientCode)
+                                .map(PatientEntity::getFullName)
+                                .orElse("UNKNOWN_PATIENT");
+                String testName = testCatalogRepository.findById(sample.getOrderItem().getTestId())
+                                .map(TestCatalogEntity::getTestName)
+                                .orElse("UNKNOWN_TEST");
+
+                Map<String, Object> details = new LinkedHashMap<>();
+                details.put("sampleId", sample.getBarcode());
+                details.put("patientName", patientName);
+                details.put("pid", patientCode);
+                details.put("testType", testName);
+                details.put("priority", sample.getPriority().name());
+                details.put("status", status.name());
+                details.put("notes", notes);
+
+                try {
+                        return objectMapper.writeValueAsString(details);
+                } catch (JsonProcessingException exception) {
+                        throw new BusinessRuleException("Could not create accessioning audit log details");
+                }
+        }
+
+        private ResultFlag resolveResultFlag(ResultItemRequest item, TestParameterEntity parameter) {
+                BigDecimal numericResult = parseNumericResult(item.result());
+
+                if (numericResult != null) {
+                        if (parameter.getRefLow() != null && numericResult.compareTo(parameter.getRefLow()) < 0) {
+                                return ResultFlag.LOW;
+                        }
+
+                        if (parameter.getRefHigh() != null && numericResult.compareTo(parameter.getRefHigh()) > 0) {
+                                return ResultFlag.HIGH;
+                        }
+
+                        if (parameter.getRefLow() != null || parameter.getRefHigh() != null) {
+                                return ResultFlag.NORMAL;
+                        }
+                }
+
+                if (item.flag() != null && !item.flag().isBlank()) {
+                        try {
+                                return ResultFlag.valueOf(item.flag().trim().toUpperCase(Locale.ROOT));
+                        } catch (IllegalArgumentException ex) {
+                                throw new BusinessRuleException("Invalid result flag: " + item.flag());
+                        }
+                }
+
+                return null;
+        }
+
+        private BigDecimal parseNumericResult(String resultValue) {
+                if (resultValue == null || resultValue.isBlank()) {
+                        return null;
+                }
+
+                try {
+                        return new BigDecimal(resultValue.trim());
+                } catch (NumberFormatException ex) {
+                        return null;
+                }
         }
 }
