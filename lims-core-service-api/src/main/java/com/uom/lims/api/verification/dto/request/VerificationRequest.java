@@ -15,4 +15,6 @@ public class VerificationRequest {
     private String status;
 
     private String mltNotes;
+
+    private String supervisorNote;
 }

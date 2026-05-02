@@ -5,6 +5,7 @@ import com.uom.lims.api.clinical.dto.request.ReturnToMLTRequest;
 import com.uom.lims.api.common.PageResponse;
 import com.uom.lims.api.verification.dto.response.TestResultDetailResponse;
 import com.uom.lims.api.verification.dto.response.TestResultSummaryResponse;
+import com.uom.lims.api.verification.dto.response.VerificationHistoryItemResponse;
 import com.uom.lims.service.ClinicalAuthorizationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -45,6 +46,28 @@ public class ClinicalAuthorizationController {
     }
 
     @PreAuthorize("hasRole('PATHOLOGIST')")
+    @GetMapping("/history")
+    @Operation(summary = "Get clinical authorization history items")
+    public PageResponse<VerificationHistoryItemResponse> getClinicalHistory(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String actionType,
+            @RequestParam(required = false) String search) {
+
+        Page<VerificationHistoryItemResponse> result =
+                clinicalAuthorizationService.getClinicalHistory(page, size, actionType, search);
+
+        return new PageResponse<>(
+                result.getContent(),
+                result.getNumber(),
+                result.getSize(),
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.isLast()
+        );
+    }
+
+    @PreAuthorize("hasRole('PATHOLOGIST')")
     @GetMapping("/{resultId}")
     @Operation(summary = "Get test result details for clinical authorization")
     public TestResultDetailResponse getResultDetails(@PathVariable UUID resultId) {
@@ -63,8 +86,8 @@ public class ClinicalAuthorizationController {
 
     @PreAuthorize("hasRole('PATHOLOGIST')")
     @PostMapping("/{resultId}/return")
-    @Operation(summary = "Return test result to MLT")
-    public TestResultDetailResponse returnToMlt(
+    @Operation(summary = "Return test result to lab supervisor")
+    public TestResultDetailResponse returnToSupervisor(
             @PathVariable UUID resultId,
             @Valid @RequestBody ReturnToMLTRequest request) {
 
