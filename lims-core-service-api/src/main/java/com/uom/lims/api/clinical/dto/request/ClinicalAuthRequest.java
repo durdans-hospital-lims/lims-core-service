@@ -15,4 +15,6 @@ public class ClinicalAuthRequest {
     private String status;
 
     private String clinicalNote;
+
+    private Boolean signatureConfirmed;
 }

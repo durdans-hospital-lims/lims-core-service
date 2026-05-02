@@ -3,9 +3,11 @@ package com.uom.lims.controller;
 import com.uom.lims.api.common.PageResponse;
 import com.uom.lims.api.dto.response.VerificationPendingItemResponse;
 import com.uom.lims.api.verification.dto.request.BulkVerificationRequest;
+import com.uom.lims.api.verification.dto.response.BulkVerificationBatchResponse;
 import com.uom.lims.api.verification.dto.request.VerificationRequest;
 import com.uom.lims.api.verification.dto.response.TestResultDetailResponse;
 import com.uom.lims.api.verification.dto.response.TestResultSummaryResponse;
+import com.uom.lims.api.verification.dto.response.VerificationHistoryItemResponse;
 import com.uom.lims.service.VerificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.List;
 
 @RequiredArgsConstructor
 @RestController
@@ -60,14 +63,36 @@ public class VerificationController {
     }
 
     @PreAuthorize("hasRole('LAB_SUPERVISOR')")
-    @GetMapping("/{resultId}")
+    @GetMapping("/history")
+    @Operation(summary = "Get verification history items")
+    public PageResponse<VerificationHistoryItemResponse> getVerificationHistory(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String actionType,
+            @RequestParam(required = false) String search) {
+
+        Page<VerificationHistoryItemResponse> result =
+                verificationService.getVerificationHistory(page, size, actionType, search);
+
+        return new PageResponse<>(
+                result.getContent(),
+                result.getNumber(),
+                result.getSize(),
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.isLast()
+        );
+    }
+
+    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @GetMapping("/{resultId:[0-9a-fA-F\\-]{36}}")
     @Operation(summary = "Get test result details for technical verification")
     public TestResultDetailResponse getResultDetails(@PathVariable UUID resultId) {
         return verificationService.getResultDetails(resultId);
     }
 
     @PreAuthorize("hasRole('LAB_SUPERVISOR')")
-    @PostMapping("/{resultId}/verify")
+    @PostMapping("/{resultId:[0-9a-fA-F\\-]{36}}/verify")
     @Operation(summary = "Technically verify a test result")
     public TestResultDetailResponse verifyResult(
             @PathVariable UUID resultId,
@@ -77,13 +102,20 @@ public class VerificationController {
     }
 
     @PreAuthorize("hasRole('LAB_SUPERVISOR')")
-    @PostMapping("/{resultId}/reject")
+    @PostMapping("/{resultId:[0-9a-fA-F\\-]{36}}/reject")
     @Operation(summary = "Reject a test result during technical verification")
     public TestResultDetailResponse rejectResult(
             @PathVariable UUID resultId,
             @Valid @RequestBody VerificationRequest request) {
 
         return verificationService.rejectResult(resultId, request);
+    }
+
+    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @GetMapping("/bulk/worklist")
+    @Operation(summary = "Get grouped bulk verification worklist")
+    public List<BulkVerificationBatchResponse> getBulkWorklist() {
+        return verificationService.getBulkWorklist();
     }
 
     @PreAuthorize("hasRole('LAB_SUPERVISOR')")
