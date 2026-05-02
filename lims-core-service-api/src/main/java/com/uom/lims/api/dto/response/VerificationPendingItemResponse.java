@@ -3,14 +3,16 @@ package com.uom.lims.api.dto.response;
 import java.time.Instant;
 import java.util.UUID;
 
-public record MltWorklistItemResponse(
+public record VerificationPendingItemResponse(
         UUID sampleId,
         String barcode,
-        String orderId,
-        UUID orderItemId,
+        UUID orderId,
         String patientId,
+        String patientName,
         String testName,
         String priority,
         String status,
-        Instant collectedAt) {
+        String flag,
+        String mltName,
+        Instant submittedAt) {
 }

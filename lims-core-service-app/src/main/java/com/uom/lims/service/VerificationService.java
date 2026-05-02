@@ -2,6 +2,9 @@ package com.uom.lims.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.uom.lims.api.dto.response.VerificationPendingItemResponse;
+import com.uom.lims.api.enums.ResultFlag;
+import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.api.verification.dto.request.BulkVerificationRequest;
 import com.uom.lims.api.verification.dto.request.VerificationRequest;
 import com.uom.lims.api.verification.dto.response.BulkVerificationBatchResponse;
@@ -9,17 +12,17 @@ import com.uom.lims.api.verification.dto.response.PreviousVisitSummaryResponse;
 import com.uom.lims.api.verification.dto.response.TestResultDetailResponse;
 import com.uom.lims.api.verification.dto.response.TestResultSummaryResponse;
 import com.uom.lims.api.verification.dto.response.VerificationHistoryItemResponse;
-import com.uom.lims.api.enums.ResultFlag;
-import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.audit.AuditLog;
 import com.uom.lims.audit.AuditLogRepository;
 import com.uom.lims.audit.AuditService;
 import com.uom.lims.api.verification.enums.ResultStatus;
-import com.uom.lims.entity.TestResultEntity;
+import com.uom.lims.entity.SampleEntity;
 import com.uom.lims.entity.TestCatalogEntity;
+import com.uom.lims.entity.TestResultEntity;
 import com.uom.lims.mapper.TestResultMapper;
 import com.uom.lims.patient.PatientEntity;
 import com.uom.lims.patient.PatientRepository;
+import com.uom.lims.repository.SampleRepository;
 import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.security.SecurityUtils;
@@ -33,12 +36,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.Period;
 import java.time.Instant;
-import java.util.List;
-import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
@@ -58,11 +62,154 @@ public class VerificationService {
 
     private final AuditService auditService;
     private final AuditLogRepository auditLogRepository;
+    private final SampleRepository sampleRepository;
     private final TestResultRepository testResultRepository;
     private final TestCatalogRepository testCatalogRepository;
     private final TestResultMapper testResultMapper;
     private final PatientRepository patientRepository;
     private final ObjectMapper objectMapper;
+
+    @Transactional(readOnly = true)
+    public List<VerificationPendingItemResponse> getPendingSamples() {
+        List<SampleEntity> samples = sampleRepository.findByStatusInAndDeletedFalseOrderByCollectedAtAsc(
+                List.of(SampleStatus.SENT_FOR_VERIFICATION));
+
+        List<UUID> testIds = samples.stream()
+                .map(sample -> sample.getOrderItem().getTestId())
+                .distinct()
+                .toList();
+
+        Map<UUID, String> testNameById = testCatalogRepository.findAllById(testIds).stream()
+                .collect(Collectors.toMap(
+                        TestCatalogEntity::getId,
+                        TestCatalogEntity::getTestName,
+                        (existing, replacement) -> existing));
+
+        List<UUID> sampleIds = samples.stream()
+                .map(SampleEntity::getId)
+                .toList();
+
+        Map<UUID, List<TestResultEntity>> resultsBySampleId = testResultRepository.findBySampleIdIn(sampleIds)
+                .stream()
+                .collect(Collectors.groupingBy(result -> result.getSample().getId()));
+
+        Map<String, String> patientNameByCode = samples.stream()
+                .map(sample -> sample.getOrderItem().getOrder().getPatientId())
+                .distinct()
+                .collect(Collectors.toMap(
+                        Function.identity(),
+                        patientCode -> patientRepository.findByPatientCode(patientCode)
+                                .map(PatientEntity::getFullName)
+                                .orElse("UNKNOWN_PATIENT")));
+
+        return samples.stream()
+                .map(sample -> {
+                    List<TestResultEntity> results = resultsBySampleId.getOrDefault(sample.getId(), List.of());
+                    TestResultEntity latestResult = results.stream()
+                            .max(Comparator.comparing(
+                                    result -> result.getLastModifiedAt() != null
+                                            ? result.getLastModifiedAt()
+                                            : result.getCreatedAt()))
+                            .orElse(null);
+
+                    ResultFlag overallFlag = results.stream()
+                            .map(TestResultEntity::getFlag)
+                            .filter(flag -> flag != null)
+                            .max(Comparator.comparingInt(this::flagSeverity))
+                            .orElse(null);
+
+                    return new VerificationPendingItemResponse(
+                            sample.getId(),
+                            sample.getBarcode(),
+                            sample.getOrderItem().getOrder().getId(),
+                            sample.getOrderItem().getOrder().getPatientId(),
+                            patientNameByCode.getOrDefault(
+                                    sample.getOrderItem().getOrder().getPatientId(),
+                                    "UNKNOWN_PATIENT"),
+                            testNameById.getOrDefault(sample.getOrderItem().getTestId(), "UNKNOWN_TEST"),
+                            sample.getPriority().name(),
+                            sample.getStatus().name(),
+                            overallFlag != null ? overallFlag.name() : null,
+                            latestResult != null
+                                    ? (latestResult.getLastModifiedBy() != null
+                                            ? latestResult.getLastModifiedBy()
+                                            : latestResult.getCreatedBy())
+                                    : null,
+                            sample.getLastModifiedAt());
+                })
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<VerificationPendingItemResponse> getPendingSamples() {
+        List<SampleEntity> samples = sampleRepository.findByStatusInAndDeletedFalseOrderByCollectedAtAsc(
+                List.of(SampleStatus.SENT_FOR_VERIFICATION));
+
+        List<UUID> testIds = samples.stream()
+                .map(sample -> sample.getOrderItem().getTestId())
+                .distinct()
+                .toList();
+
+        Map<UUID, String> testNameById = testCatalogRepository.findAllById(testIds).stream()
+                .collect(Collectors.toMap(
+                        TestCatalogEntity::getId,
+                        TestCatalogEntity::getTestName,
+                        (existing, replacement) -> existing));
+
+        List<UUID> sampleIds = samples.stream()
+                .map(SampleEntity::getId)
+                .toList();
+
+        Map<UUID, List<TestResultEntity>> resultsBySampleId = testResultRepository.findBySampleIdIn(sampleIds)
+                .stream()
+                .collect(Collectors.groupingBy(result -> result.getSample().getId()));
+
+        Map<String, String> patientNameByCode = samples.stream()
+                .map(sample -> sample.getOrderItem().getOrder().getPatientId())
+                .distinct()
+                .collect(Collectors.toMap(
+                        Function.identity(),
+                        patientCode -> patientRepository.findByPatientCode(patientCode)
+                                .map(PatientEntity::getFullName)
+                                .orElse("UNKNOWN_PATIENT")));
+
+        return samples.stream()
+                .map(sample -> {
+                    List<TestResultEntity> results = resultsBySampleId.getOrDefault(sample.getId(), List.of());
+                    TestResultEntity latestResult = results.stream()
+                            .max(Comparator.comparing(
+                                    result -> result.getLastModifiedAt() != null
+                                            ? result.getLastModifiedAt()
+                                            : result.getCreatedAt()))
+                            .orElse(null);
+
+                    ResultFlag overallFlag = results.stream()
+                            .map(TestResultEntity::getFlag)
+                            .filter(flag -> flag != null)
+                            .max(Comparator.comparingInt(this::flagSeverity))
+                            .orElse(null);
+
+                    return new VerificationPendingItemResponse(
+                            sample.getId(),
+                            sample.getBarcode(),
+                            sample.getOrderItem().getOrder().getId(),
+                            sample.getOrderItem().getOrder().getPatientId(),
+                            patientNameByCode.getOrDefault(
+                                    sample.getOrderItem().getOrder().getPatientId(),
+                                    "UNKNOWN_PATIENT"),
+                            testNameById.getOrDefault(sample.getOrderItem().getTestId(), "UNKNOWN_TEST"),
+                            sample.getPriority().name(),
+                            sample.getStatus().name(),
+                            overallFlag != null ? overallFlag.name() : null,
+                            latestResult != null
+                                    ? (latestResult.getLastModifiedBy() != null
+                                            ? latestResult.getLastModifiedBy()
+                                            : latestResult.getCreatedBy())
+                                    : null,
+                            sample.getLastModifiedAt());
+                })
+                .toList();
+    }
 
     @Transactional(readOnly = true)
     public Page<TestResultSummaryResponse> getPendingResults(int page, int size) {
@@ -266,6 +413,14 @@ public class VerificationService {
         return resultMap;
     }
 
+    private int flagSeverity(ResultFlag flag) {
+        return switch (flag) {
+            case NORMAL -> 0;
+            case LOW, HIGH -> 1;
+            case CRITICAL_LOW, CRITICAL_HIGH -> 2;
+        };
+    }
+
     private TestResultEntity findResultById(UUID id) {
         return testResultRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Test result not found: " + id));
@@ -331,6 +486,14 @@ public class VerificationService {
     private boolean isSafeForBulkApproval(TestResultEntity result) {
         return result.getStatus() == ResultStatus.ENTERED
                 && (result.getFlag() == null || result.getFlag() == ResultFlag.NORMAL);
+    }
+
+    private int flagSeverity(ResultFlag flag) {
+        return switch (flag) {
+            case NORMAL -> 0;
+            case LOW, HIGH -> 1;
+            case CRITICAL_LOW, CRITICAL_HIGH -> 2;
+        };
     }
 
     private VerificationHistoryItemResponse toHistoryItemResponse(AuditLog auditLog) {

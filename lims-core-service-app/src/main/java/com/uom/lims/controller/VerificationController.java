@@ -1,6 +1,7 @@
 package com.uom.lims.controller;
 
 import com.uom.lims.api.common.PageResponse;
+import com.uom.lims.api.dto.response.VerificationPendingItemResponse;
 import com.uom.lims.api.verification.dto.request.BulkVerificationRequest;
 import com.uom.lims.api.verification.dto.response.BulkVerificationBatchResponse;
 import com.uom.lims.api.verification.dto.request.VerificationRequest;
@@ -13,9 +14,17 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.List;
@@ -30,6 +39,13 @@ public class VerificationController {
 
     @PreAuthorize("hasRole('LAB_SUPERVISOR')")
     @GetMapping("/pending")
+    @Operation(summary = "Get pending samples for supervisor verification queue")
+    public ResponseEntity<List<VerificationPendingItemResponse>> getPendingSamples() {
+        return ResponseEntity.ok(verificationService.getPendingSamples());
+    }
+
+    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @GetMapping("/pending-results")
     @Operation(summary = "Get pending test results for technical verification")
     public PageResponse<TestResultSummaryResponse> getPendingResults(
             @RequestParam(defaultValue = "0") int page,
@@ -43,8 +59,7 @@ public class VerificationController {
                 result.getSize(),
                 result.getTotalElements(),
                 result.getTotalPages(),
-                result.isLast()
-        );
+                result.isLast());
     }
 
     @PreAuthorize("hasRole('LAB_SUPERVISOR')")
