@@ -15,8 +15,13 @@ public class TestResultSummaryResponse {
     private String resultId;
     private String status;
     private String patientName;
+    private String testType;
+    private String mltName;
+    private String qcStatus;
+    private String flag;
     private Instant createdAt;
     private Instant updatedAt;
     private String technicianName;
     private String pathologistName;
+    private String returnReason;
 }

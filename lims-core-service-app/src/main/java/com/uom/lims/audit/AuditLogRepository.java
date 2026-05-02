@@ -12,6 +12,41 @@ import java.util.UUID;
 @Repository
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
 
+        @Query(value = """
+                        SELECT *
+                        FROM audit_log a
+                        WHERE a.entity_type = :entityType
+                          AND a.action IN (:actions)
+                          AND (
+                                :search IS NULL
+                                OR LOWER(COALESCE(CAST(a.entity_id AS TEXT), '')) LIKE LOWER(CONCAT('%%', CAST(:search AS TEXT), '%%'))
+                                OR LOWER(COALESCE(a.performed_by, '')) LIKE LOWER(CONCAT('%%', CAST(:search AS TEXT), '%%'))
+                                OR LOWER(COALESCE(CAST(a.details AS TEXT), '')) LIKE LOWER(CONCAT('%%', CAST(:search AS TEXT), '%%'))
+                              )
+                        ORDER BY a.timestamp DESC
+                        """, countQuery = """
+                        SELECT COUNT(*)
+                        FROM audit_log a
+                        WHERE a.entity_type = :entityType
+                          AND a.action IN (:actions)
+                          AND (
+                                :search IS NULL
+                                OR LOWER(COALESCE(CAST(a.entity_id AS TEXT), '')) LIKE LOWER(CONCAT('%%', CAST(:search AS TEXT), '%%'))
+                                OR LOWER(COALESCE(a.performed_by, '')) LIKE LOWER(CONCAT('%%', CAST(:search AS TEXT), '%%'))
+                                OR LOWER(COALESCE(CAST(a.details AS TEXT), '')) LIKE LOWER(CONCAT('%%', CAST(:search AS TEXT), '%%'))
+                              )
+                        """, nativeQuery = true)
+        Page<AuditLog> findHistoryByEntityTypeAndActions(
+                        @Param("entityType") String entityType,
+                        @Param("actions") java.util.List<String> actions,
+                        @Param("search") String search,
+                        Pageable pageable);
+
+        Page<AuditLog> findByEntityTypeAndActionInOrderByTimestampDesc(
+                        String entityType,
+                        java.util.List<String> actions,
+                        Pageable pageable);
+
         Page<AuditLog> findByBranchCode(String branchCode, Pageable pageable);
 
         @Query(value = "SELECT * FROM audit_log a WHERE a.branch_code = :branchCode " +

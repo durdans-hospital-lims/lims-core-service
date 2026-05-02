@@ -1,67 +1,217 @@
 package com.uom.lims.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uom.lims.api.verification.dto.request.BulkVerificationRequest;
 import com.uom.lims.api.verification.dto.request.VerificationRequest;
+import com.uom.lims.api.verification.dto.response.BulkVerificationBatchResponse;
+import com.uom.lims.api.verification.dto.response.PreviousVisitSummaryResponse;
 import com.uom.lims.api.verification.dto.response.TestResultDetailResponse;
 import com.uom.lims.api.verification.dto.response.TestResultSummaryResponse;
+import com.uom.lims.api.verification.dto.response.VerificationHistoryItemResponse;
+import com.uom.lims.api.enums.ResultFlag;
 import com.uom.lims.api.enums.SampleStatus;
+import com.uom.lims.audit.AuditLog;
+import com.uom.lims.audit.AuditLogRepository;
+import com.uom.lims.audit.AuditService;
 import com.uom.lims.api.verification.enums.ResultStatus;
 import com.uom.lims.entity.TestResultEntity;
+import com.uom.lims.entity.TestCatalogEntity;
 import com.uom.lims.mapper.TestResultMapper;
+import com.uom.lims.patient.PatientEntity;
+import com.uom.lims.patient.PatientRepository;
+import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.Period;
 import java.time.Instant;
+import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.HashMap;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Service
 public class VerificationService {
+    private static final String VERIFICATION_ENTITY_TYPE = "VERIFICATION";
+    private static final String ACTION_VERIFICATION_APPROVED = "VERIFICATION_APPROVED";
+    private static final String ACTION_RETURNED_TO_MLT = "VERIFICATION_RETURNED_TO_MLT";
+    private static final String ACTION_RETURNED_FROM_CLINICAL = "VERIFICATION_RETURNED_FROM_CLINICAL";
+    private static final List<String> VERIFICATION_HISTORY_ACTIONS = List.of(
+            ACTION_VERIFICATION_APPROVED,
+            ACTION_RETURNED_TO_MLT,
+            ACTION_RETURNED_FROM_CLINICAL
+    );
+    private static final String MLT_NOTE_MARKER = "[MLT_NOTE]";
+    private static final String SUPERVISOR_NOTE_MARKER = "[SUPERVISOR_NOTE]";
 
+    private final AuditService auditService;
+    private final AuditLogRepository auditLogRepository;
     private final TestResultRepository testResultRepository;
+    private final TestCatalogRepository testCatalogRepository;
     private final TestResultMapper testResultMapper;
+    private final PatientRepository patientRepository;
+    private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
     public Page<TestResultSummaryResponse> getPendingResults(int page, int size) {
-        return testResultRepository
-                .findByStatusAndDraftFalse(ResultStatus.ENTERED, PageRequest.of(page, size))
-                .map(testResultMapper::toSummaryResponse);
+        Page<TestResultEntity> resultsPage = testResultRepository.findByStatusInAndDraftFalse(
+                List.of(ResultStatus.ENTERED, ResultStatus.RETURNED_FOR_RECHECK),
+                PageRequest.of(
+                        page,
+                        size,
+                        Sort.by(Sort.Order.desc("lastModifiedAt"), Sort.Order.desc("createdAt"))
+                ));
+
+        List<UUID> testIds = resultsPage.getContent().stream()
+                .map(this::safelyResolveTestId)
+                .filter(testId -> testId != null)
+                .distinct()
+                .toList();
+
+        Map<UUID, String> testNamesById = testIds.isEmpty()
+                ? Map.of()
+                : testCatalogRepository.findAllByIdInAndActiveTrueAndDeletedFalse(testIds).stream()
+                .collect(Collectors.toMap(TestCatalogEntity::getId, TestCatalogEntity::getTestName));
+
+        Map<String, String> patientNamesById = new HashMap<>();
+        resultsPage.getContent().stream()
+                .map(this::safelyResolvePatientId)
+                .filter(patientId -> patientId != null && !patientId.isBlank())
+                .distinct()
+                .forEach(patientId -> patientNamesById.put(patientId, safelyResolvePatientName(patientId)));
+
+        return resultsPage.map(result -> testResultMapper.toSummaryResponse(
+                result,
+                testNamesById.get(safelyResolveTestId(result)),
+                patientNamesById.get(safelyResolvePatientId(result))));
+    }
+
+    @Transactional(readOnly = true)
+    public List<BulkVerificationBatchResponse> getBulkWorklist() {
+        List<TestResultEntity> pendingResults = testResultRepository.findByStatusInAndDraftFalse(
+                List.of(ResultStatus.ENTERED, ResultStatus.RETURNED_FOR_RECHECK)
+        );
+
+        Map<UUID, TestCatalogEntity> catalogsById = testCatalogRepository.findAllByIdInAndActiveTrueAndDeletedFalse(
+                        pendingResults.stream()
+                                .map(result -> result.getSample().getOrderItem().getTestId())
+                                .distinct()
+                                .toList()
+                ).stream()
+                .collect(Collectors.toMap(TestCatalogEntity::getId, catalog -> catalog));
+
+        return pendingResults.stream()
+                .collect(Collectors.groupingBy(result -> result.getSample().getOrderItem().getTestId()))
+                .entrySet().stream()
+                .map(entry -> toBulkBatchResponse(entry.getKey(), entry.getValue(), catalogsById.get(entry.getKey())))
+                .sorted(
+                        Comparator.comparing(
+                                BulkVerificationBatchResponse::getUpdatedAt,
+                                Comparator.nullsLast(Comparator.reverseOrder())
+                        ).thenComparing(
+                                BulkVerificationBatchResponse::getBatchName,
+                                String.CASE_INSENSITIVE_ORDER
+                        )
+                )
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<VerificationHistoryItemResponse> getVerificationHistory(
+            int page,
+            int size,
+            String actionType,
+            String search
+    ) {
+        List<String> actions = resolveHistoryActions(actionType, VERIFICATION_HISTORY_ACTIONS);
+        if (actions.isEmpty()) {
+            return Page.empty(PageRequest.of(page, size));
+        }
+
+        return auditLogRepository
+                .findHistoryByEntityTypeAndActions(
+                        VERIFICATION_ENTITY_TYPE,
+                        actions,
+                        normalizeSearch(search),
+                        PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"))
+                )
+                .map(this::toHistoryItemResponse);
     }
 
     @Transactional(readOnly = true)
     public TestResultDetailResponse getResultDetails(UUID resultId) {
         TestResultEntity result = findResultById(resultId);
-        return testResultMapper.toDetailResponse(result);
+        List<TestResultEntity> caseResults = testResultRepository.findBySampleId(result.getSample().getId());
+        String patientId = safelyResolvePatientId(result);
+
+        UUID testId = safelyResolveTestId(result);
+        String testType = testId == null
+                ? null
+                : testCatalogRepository.findById(testId)
+                .filter(TestCatalogEntity::isActive)
+                .filter(catalog -> !catalog.isDeleted())
+                .map(TestCatalogEntity::getTestName)
+                .orElse(null);
+
+        PatientEntity patient = safelyResolvePatientEntity(patientId);
+        String patientName = patient != null ? patient.getFullName() : null;
+        Integer patientAge = patient == null ? null : calculatePatientAge(patient);
+        String patientGender = patient == null || patient.getGender() == null ? null : patient.getGender().name();
+        List<PreviousVisitSummaryResponse> previousVisits = resolvePreviousVisits(
+                patientId,
+                testId,
+                result.getSample().getId()
+        );
+
+        return testResultMapper.toDetailResponse(
+                result,
+                caseResults,
+                patientName,
+                testType,
+                patientAge,
+                patientGender,
+                previousVisits
+        );
     }
 
     @Transactional
     public TestResultDetailResponse verifyResult(UUID resultId, VerificationRequest request) {
         TestResultEntity result = findResultById(resultId);
 
-        if (result.getStatus() != ResultStatus.ENTERED) {
+        if (result.getStatus() != ResultStatus.ENTERED
+                && result.getStatus() != ResultStatus.RETURNED_FOR_RECHECK) {
             throw new IllegalStateException(
-                    "Cannot verify result not in ENTERED status. Current: " + result.getStatus());
+                    "Cannot verify result not in ENTERED or RETURNED_FOR_RECHECK status. Current: "
+                            + result.getStatus());
         }
 
         String username = SecurityUtils.getCurrentUsername();
         Instant now = Instant.now();
+        String storedNotes = composeStoredNotes(request.getMltNotes(), request.getSupervisorNote());
+        String historyNotes = resolveApprovalHistoryNotes(request.getSupervisorNote());
 
         result.setStatus(ResultStatus.TECHNICALLY_VERIFIED);
         result.getSample().setStatus(SampleStatus.VERIFIED);
-        result.setMltNotes(request.getMltNotes());
+        result.setMltNotes(storedNotes);
         result.setTechnicallyVerifiedBy(username);
         result.setTechnicallyVerifiedAt(now);
         result.setLastModifiedBy(username);
         result.setLastModifiedAt(now);
 
         TestResultEntity saved = testResultRepository.save(result);
+        logVerificationEvent(saved, ACTION_VERIFICATION_APPROVED, historyNotes);
         return testResultMapper.toDetailResponse(saved);
     }
 
@@ -69,23 +219,29 @@ public class VerificationService {
     public TestResultDetailResponse rejectResult(UUID resultId, VerificationRequest request) {
         TestResultEntity result = findResultById(resultId);
 
-        if (result.getStatus() != ResultStatus.ENTERED) {
+        if (result.getStatus() != ResultStatus.ENTERED
+                && result.getStatus() != ResultStatus.RETURNED_FOR_RECHECK) {
             throw new IllegalStateException(
-                    "Cannot reject result not in ENTERED status. Current: " + result.getStatus());
+                    "Cannot reject result not in ENTERED or RETURNED_FOR_RECHECK status. Current: "
+                            + result.getStatus());
         }
 
         String username = SecurityUtils.getCurrentUsername();
         Instant now = Instant.now();
+        String storedNotes = composeStoredNotes(request.getMltNotes(), request.getSupervisorNote());
 
         result.setStatus(ResultStatus.REJECTED);
         result.getSample().setStatus(SampleStatus.REJECTED);
-        result.setMltNotes(request.getMltNotes());
+        result.setMltNotes(storedNotes);
         result.setTechnicallyVerifiedBy(username);
         result.setTechnicallyVerifiedAt(now);
         result.setLastModifiedBy(username);
         result.setLastModifiedAt(now);
 
         TestResultEntity saved = testResultRepository.save(result);
+        logVerificationEvent(saved, ACTION_RETURNED_TO_MLT, resolveHistoryNotes(
+                ACTION_RETURNED_TO_MLT,
+                sanitizeHistoryNote(extractMltNote(storedNotes))));
         return testResultMapper.toDetailResponse(saved);
     }
 
@@ -113,5 +269,365 @@ public class VerificationService {
     private TestResultEntity findResultById(UUID id) {
         return testResultRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Test result not found: " + id));
+    }
+
+    private List<String> resolveHistoryActions(String actionType, List<String> allowedActions) {
+        if (actionType == null || actionType.isBlank()) {
+            return allowedActions;
+        }
+
+        return allowedActions.contains(actionType) ? List.of(actionType) : List.of();
+    }
+
+    private String normalizeSearch(String search) {
+        if (search == null) {
+            return null;
+        }
+
+        String trimmed = search.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private BulkVerificationBatchResponse toBulkBatchResponse(
+            UUID testId,
+            List<TestResultEntity> results,
+            TestCatalogEntity catalog
+    ) {
+        List<TestResultEntity> safeResults = results.stream()
+                .filter(this::isSafeForBulkApproval)
+                .toList();
+        List<TestResultEntity> reviewResults = results.stream()
+                .filter(result -> !isSafeForBulkApproval(result))
+                .toList();
+
+        Instant updatedAt = results.stream()
+                .map(TestResultEntity::getLastModifiedAt)
+                .filter(value -> value != null)
+                .max(Comparator.naturalOrder())
+                .orElse(results.stream()
+                        .map(TestResultEntity::getCreatedAt)
+                        .filter(value -> value != null)
+                        .max(Comparator.naturalOrder())
+                        .orElse(null));
+
+        return BulkVerificationBatchResponse.builder()
+                .batchId(testId.toString())
+                .batchName(catalog == null ? "Unknown Test Group" : catalog.getTestName())
+                .batchCode(catalog == null ? testId.toString() : catalog.getTestCode())
+                .department(catalog == null ? "Unknown Department" : catalog.getCategory())
+                .totalResults(results.size())
+                .safeForApproval(safeResults.size())
+                .exceptions(results.size() - safeResults.size())
+                .updatedAt(updatedAt)
+                .resultIds(safeResults.stream()
+                        .map(result -> result.getId().toString())
+                        .toList())
+                .reviewResultIds(reviewResults.stream()
+                        .map(result -> result.getId().toString())
+                        .toList())
+                .build();
+    }
+
+    private boolean isSafeForBulkApproval(TestResultEntity result) {
+        return result.getStatus() == ResultStatus.ENTERED
+                && (result.getFlag() == null || result.getFlag() == ResultFlag.NORMAL);
+    }
+
+    private VerificationHistoryItemResponse toHistoryItemResponse(AuditLog auditLog) {
+        Map<String, String> details = parseDetails(auditLog.getDetails());
+        return VerificationHistoryItemResponse.builder()
+                .resultId(auditLog.getEntityId() == null ? "" : auditLog.getEntityId().toString())
+                .actionType(auditLog.getAction())
+                .testName(details.getOrDefault("testName", "Unknown Test Group"))
+                .actionSummary(getActionSummary(auditLog.getAction()))
+                .performedBy(auditLog.getPerformedBy())
+                .actionAt(auditLog.getTimestamp() == null ? null : auditLog.getTimestamp().atZone(java.time.ZoneId.systemDefault()).toInstant())
+                .notes(details.get("notes"))
+                .updatedAt(auditLog.getTimestamp() == null ? null : auditLog.getTimestamp().atZone(java.time.ZoneId.systemDefault()).toInstant())
+                .build();
+    }
+
+    private String getActionSummary(String action) {
+        if (ACTION_VERIFICATION_APPROVED.equals(action)) {
+            return "Approved by Supervisor";
+        }
+        if (ACTION_RETURNED_TO_MLT.equals(action)) {
+            return "Returned to MLT";
+        }
+        if (ACTION_RETURNED_FROM_CLINICAL.equals(action)) {
+            return "Returned to Supervisor from Clinical";
+        }
+        return "Workflow Updated";
+    }
+
+    private String resolvePatientName(String patientId) {
+        return resolvePatientEntity(patientId)
+                .map(PatientEntity::getFullName)
+                .orElse(null);
+    }
+
+    private java.util.Optional<PatientEntity> resolvePatientEntity(String patientId) {
+        if (patientId == null || patientId.isBlank()) {
+            return java.util.Optional.empty();
+        }
+
+        String normalizedPatientId = patientId.trim();
+
+        return patientRepository.findByPatientCode(normalizedPatientId)
+                .or(() -> resolvePatientByUuid(normalizedPatientId));
+    }
+
+    private String safelyResolvePatientName(String patientId) {
+        try {
+            return resolvePatientName(patientId);
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private PatientEntity safelyResolvePatientEntity(String patientId) {
+        try {
+            return resolvePatientEntity(patientId).orElse(null);
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private UUID safelyResolveTestId(TestResultEntity result) {
+        try {
+            return result.getSample().getOrderItem().getTestId();
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private String safelyResolvePatientId(TestResultEntity result) {
+        try {
+            return result.getSample().getOrderItem().getOrder().getPatientId();
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private java.util.Optional<PatientEntity> resolvePatientByUuid(String patientId) {
+        try {
+            return patientRepository.findById(UUID.fromString(patientId));
+        } catch (IllegalArgumentException exception) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    private Integer calculatePatientAge(PatientEntity patient) {
+        if (patient.getDob() == null) {
+            return null;
+        }
+
+        return Period.between(patient.getDob(), LocalDate.now()).getYears();
+    }
+
+    private List<PreviousVisitSummaryResponse> resolvePreviousVisits(String patientId, UUID testId, UUID currentSampleId) {
+        if (patientId == null || patientId.isBlank() || testId == null || currentSampleId == null) {
+            return List.of();
+        }
+
+        TestResultEntity currentResult = testResultRepository.findBySampleId(currentSampleId).stream()
+                .findFirst()
+                .orElse(null);
+        Instant currentVisitAt = currentResult == null
+                ? null
+                : currentResult.getSample().getCollectedAt() != null
+                ? currentResult.getSample().getCollectedAt()
+                : currentResult.getSample().getCreatedAt();
+
+        if (currentVisitAt == null) {
+            return List.of();
+        }
+
+        Map<UUID, List<TestResultEntity>> resultsBySample = testResultRepository
+                .findPreviousResultsForPatientAndTest(patientId.trim(), testId, currentSampleId, currentVisitAt)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        result -> result.getSample().getId(),
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ));
+
+        return resultsBySample.values().stream()
+                .map(this::toPreviousVisitSummary)
+                .limit(5)
+                .toList();
+    }
+
+    private PreviousVisitSummaryResponse toPreviousVisitSummary(List<TestResultEntity> sampleResults) {
+        TestResultEntity primaryResult = sampleResults.get(0);
+        Instant visitedAt = primaryResult.getSample().getCollectedAt() != null
+                ? primaryResult.getSample().getCollectedAt()
+                : primaryResult.getSample().getCreatedAt();
+        int abnormalCount = (int) sampleResults.stream()
+                .filter(result -> result.getFlag() != null && result.getFlag() != ResultFlag.NORMAL)
+                .count();
+        int criticalCount = (int) sampleResults.stream()
+                .filter(result -> result.getFlag() == ResultFlag.CRITICAL_HIGH || result.getFlag() == ResultFlag.CRITICAL_LOW)
+                .count();
+
+        return PreviousVisitSummaryResponse.builder()
+                .resultId(primaryResult.getId().toString())
+                .sampleId(primaryResult.getSample().getId().toString())
+                .status(primaryResult.getStatus() == null ? null : primaryResult.getStatus().name())
+                .visitedAt(visitedAt)
+                .parameterCount(sampleResults.size())
+                .abnormalCount(abnormalCount)
+                .criticalCount(criticalCount)
+                .build();
+    }
+
+    private String resolveHistoryNotes(String action, String notes) {
+        if (notes != null && !notes.isBlank()) {
+            return notes;
+        }
+        if (ACTION_VERIFICATION_APPROVED.equals(action)) {
+            return "Technically verified by lab supervisor.";
+        }
+        if (ACTION_RETURNED_TO_MLT.equals(action)) {
+            return "Returned to MLT for correction and re-entry.";
+        }
+        return notes;
+    }
+
+    private String resolveApprovalHistoryNotes(String supervisorNote) {
+        if (supervisorNote != null && !supervisorNote.isBlank()) {
+            return sanitizeHistoryNote(supervisorNote);
+        }
+
+        return resolveHistoryNotes(ACTION_VERIFICATION_APPROVED, null);
+    }
+
+    private String composeStoredNotes(String mltNotes, String supervisorNote) {
+        String trimmedMltNotes = trimToNull(mltNotes);
+        String trimmedSupervisorNote = trimToNull(supervisorNote);
+
+        if (trimmedSupervisorNote == null) {
+            return trimmedMltNotes;
+        }
+
+        if (trimmedMltNotes == null) {
+            return SUPERVISOR_NOTE_MARKER + System.lineSeparator() + trimmedSupervisorNote;
+        }
+
+        return MLT_NOTE_MARKER + System.lineSeparator() + trimmedMltNotes
+                + System.lineSeparator() + System.lineSeparator()
+                + SUPERVISOR_NOTE_MARKER + System.lineSeparator() + trimmedSupervisorNote;
+    }
+
+    private String extractMltNote(String storedNotes) {
+        if (storedNotes == null || storedNotes.isBlank()) {
+            return storedNotes;
+        }
+
+        if (!storedNotes.contains(MLT_NOTE_MARKER) && !storedNotes.contains(SUPERVISOR_NOTE_MARKER)) {
+            return storedNotes;
+        }
+
+        return extractSection(storedNotes, MLT_NOTE_MARKER);
+    }
+
+    private String extractSection(String storedNotes, String marker) {
+        int markerIndex = storedNotes.indexOf(marker);
+        if (markerIndex < 0) {
+            return null;
+        }
+
+        int contentStart = markerIndex + marker.length();
+        while (contentStart < storedNotes.length()
+                && (storedNotes.charAt(contentStart) == '\n' || storedNotes.charAt(contentStart) == '\r')) {
+            contentStart++;
+        }
+
+        int nextMltIndex = storedNotes.indexOf(MLT_NOTE_MARKER, contentStart);
+        int nextSupervisorIndex = storedNotes.indexOf(SUPERVISOR_NOTE_MARKER, contentStart);
+        int nextMarkerIndex = -1;
+
+        if (nextMltIndex >= 0 && nextSupervisorIndex >= 0) {
+            nextMarkerIndex = Math.min(nextMltIndex, nextSupervisorIndex);
+        } else if (nextMltIndex >= 0) {
+            nextMarkerIndex = nextMltIndex;
+        } else if (nextSupervisorIndex >= 0) {
+            nextMarkerIndex = nextSupervisorIndex;
+        }
+
+        String section = nextMarkerIndex >= 0
+                ? storedNotes.substring(contentStart, nextMarkerIndex)
+                : storedNotes.substring(contentStart);
+
+        return trimToNull(section);
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private String sanitizeHistoryNote(String note) {
+        String trimmed = trimToNull(note);
+        if (trimmed == null) {
+            return null;
+        }
+
+        if (trimmed.startsWith("Added by ")) {
+            int separatorIndex = trimmed.indexOf(": ");
+            if (separatorIndex >= 0 && separatorIndex + 2 < trimmed.length()) {
+                return trimmed.substring(separatorIndex + 2).trim();
+            }
+        }
+
+        if (trimmed.startsWith("Returned by ")) {
+            int separatorIndex = trimmed.indexOf(": ");
+            if (separatorIndex >= 0 && separatorIndex + 2 < trimmed.length()) {
+                return trimmed.substring(separatorIndex + 2).trim();
+            }
+        }
+
+        return trimmed;
+    }
+
+    private void logVerificationEvent(TestResultEntity result, String action, String notes) {
+        TestCatalogEntity catalog = testCatalogRepository.findById(result.getSample().getOrderItem().getTestId())
+                .orElse(null);
+
+        Map<String, String> details = new HashMap<>();
+        details.put("testName", catalog == null ? "Unknown Test Group" : catalog.getTestName());
+        if (notes != null && !notes.isBlank()) {
+            details.put("notes", notes);
+        }
+
+        try {
+            auditService.log(
+                    action,
+                    VERIFICATION_ENTITY_TYPE,
+                    result.getId(),
+                    result.getSample().getBarcode(),
+                    objectMapper.writeValueAsString(details),
+                    null
+            );
+        } catch (Exception exception) {
+            throw new RuntimeException("Failed to log verification history event", exception);
+        }
+    }
+
+    private Map<String, String> parseDetails(String rawDetails) {
+        if (rawDetails == null || rawDetails.isBlank()) {
+            return Map.of();
+        }
+
+        try {
+            return objectMapper.readValue(rawDetails, new TypeReference<>() {
+            });
+        } catch (Exception exception) {
+            return Map.of("notes", rawDetails);
+        }
     }
 }

@@ -6,5 +6,6 @@ public enum ResultStatus {
     REJECTED,
     CLINICALLY_AUTHORIZED,
     RETURNED,
+    RETURNED_FOR_RECHECK,
     DISPATCHED;
 }
