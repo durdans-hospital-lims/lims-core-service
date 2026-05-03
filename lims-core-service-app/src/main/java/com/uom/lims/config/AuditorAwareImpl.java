@@ -12,13 +12,18 @@ public class AuditorAwareImpl implements AuditorAware<String> {
 
     @Override
     public Optional<String> getCurrentAuditor() {
-
-        Authentication authentication = SecurityContextHolder
-                .getContext()
-                .getAuthentication();
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication == null || !authentication.isAuthenticated()) {
             return Optional.empty();
+        }
+
+        if (authentication instanceof org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken jwtToken) {
+            Object name = jwtToken.getTokenAttributes().get("name");
+            if (name != null) return Optional.of(name.toString());
+
+            Object username = jwtToken.getTokenAttributes().get("preferred_username");
+            if (username != null) return Optional.of(username.toString());
         }
 
         return Optional.of(authentication.getName());

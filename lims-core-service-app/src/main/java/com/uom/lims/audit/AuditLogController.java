@@ -1,6 +1,7 @@
 package com.uom.lims.audit;
 
 import com.uom.lims.api.common.PageResponse;
+import com.uom.lims.security.ClientIpResolver;
 import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +13,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -24,6 +27,11 @@ import java.util.stream.Collectors;
 public class AuditLogController {
 
     private final AuditLogRepository auditLogRepository;
+    private final AuditService auditService;
+
+    public static final String ENTITY_REVENUE_REPORT = "REVENUE_REPORT";
+    public static final String ACTION_REVENUE_REPORT_VIEWED = "REVENUE_REPORT_VIEWED";
+    public static final String ACTION_REVENUE_REPORT_EXPORTED = "REVENUE_REPORT_EXPORTED";
 
     @PreAuthorize("hasAnyRole('FRONT_DESK','BRANCH_ADMIN','SUPER_ADMIN')")
     @GetMapping
@@ -76,6 +84,22 @@ public class AuditLogController {
             log.error("Error fetching audit logs", e);
             throw e;
         }
+    }
+
+    /**
+     * Records revenue report screen access. {@code performedBy} is resolved from the security context.
+     */
+    @PreAuthorize("hasAnyRole('FRONT_DESK','BRANCH_ADMIN','SUPER_ADMIN')")
+    @PostMapping("/revenue-report-access")
+    public ResponseEntity<Void> recordRevenueReportAccess(
+            @RequestBody(required = false) RevenueReportAccessRequest body,
+            HttpServletRequest request) {
+        String event = body != null && body.getEvent() != null ? body.getEvent().trim().toUpperCase() : "VIEW";
+        String action = "EXPORT".equals(event) ? ACTION_REVENUE_REPORT_EXPORTED : ACTION_REVENUE_REPORT_VIEWED;
+        String details = body != null ? body.getDetail() : null;
+        auditService.writeStandalone(action, ENTITY_REVENUE_REPORT, null, null, details,
+                ClientIpResolver.resolve(request));
+        return ResponseEntity.noContent().build();
     }
 
     private String normalizeParam(String param) {

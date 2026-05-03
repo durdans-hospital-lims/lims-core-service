@@ -2,6 +2,7 @@ package com.uom.lims.api.dto.response;
 
 import com.uom.lims.api.enums.Priority;
 import com.uom.lims.api.enums.SampleStatus;
+import com.uom.lims.api.enums.TubeType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -26,9 +27,11 @@ public class CollectionHistoryResponse {
     private String patientName;
     private String pid;
     private List<String> testCodes;
+    private TubeType tubeType;
     private Priority priority;
     private SampleStatus status;
     private Instant collectedAt;
     private String collectedBy;
     private long waitTime;
+    private String rejectionNotes;
 }

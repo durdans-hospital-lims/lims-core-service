@@ -28,6 +28,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.List;
 import java.util.UUID;
 
@@ -60,7 +62,8 @@ public class SampleService {
      */
     @Transactional(readOnly = true)
     public Page<SampleResponse> getPendingSamples(Pageable pageable) {
-        return sampleRepository.findAllByStatusAndDeletedFalse(SampleStatus.PENDING_COLLECTION, pageable)
+        return sampleRepository.findAllByStatusAndOrderItem_Order_Bill_PaymentStatusAndDeletedFalse(
+                        SampleStatus.PENDING_COLLECTION, PaymentStatus.PAID, pageable)
                 .map(this::toResponse);
     }
 
@@ -77,9 +80,10 @@ public class SampleService {
         // WHY: We query COLLECTED first — REJECTED samples are included separately.
         // Using findAll with status filter and mapping both statuses as history is the
         // simplest approach given the current repository contract.
-        Page<SampleEntity> collected = sampleRepository
-                .findAllByStatusAndDeletedFalse(SampleStatus.COLLECTED, pageable);
-        return collected.map(this::toHistoryResponse);
+        Page<SampleEntity> history = sampleRepository
+                .findAllByStatusInAndDeletedFalse(
+                        List.of(SampleStatus.COLLECTED, SampleStatus.REJECTED), pageable);
+        return history.map(this::toHistoryResponse);
     }
 
     /**
@@ -176,6 +180,7 @@ public class SampleService {
         sample.setRejectedAt(Instant.now());
         sample.setRejectedBy(securityUtils.getCurrentUsername());
         sample.setRejectionReason(request.getRejectionReason());
+        sample.setRejectionNotes(request.getRejectionNotes());
         SampleEntity rejectedSample = sampleRepository.save(sample);
         log.info("Sample {} rejected by {} for reason: {}",
                 sample.getBarcode(), sample.getRejectedBy(), sample.getRejectionReason());
@@ -190,6 +195,7 @@ public class SampleService {
         recollection.setStatus(SampleStatus.RECOLLECTION_REQUIRED);
         recollection.setParentSample(rejectedSample);
         recollection.setRecollectionCount(rejectedSample.getRecollectionCount() + 1);
+        recollection.setCreatedBy(securityUtils.getCurrentUsername());
 
         SampleEntity savedRecollection = sampleRepository.save(recollection);
         log.info("Recollection sample {} created for rejected sample {}",
@@ -209,9 +215,19 @@ public class SampleService {
      * @return the SampleResponse DTO safe for exposure outside the service layer
      */
     private SampleResponse toResponse(SampleEntity sample) {
+        String patientId = sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null
+                ? sample.getOrderItem().getOrder().getPatientId()
+                : null;
+        PatientResponse patient = getPatientSafely(patientId);
+
         SamplePatientInfo patientInfo = SamplePatientInfo.builder()
-                .pid(sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null
-                        ? sample.getOrderItem().getOrder().getPatientId()
+                .pid(patientId)
+                .name(patient != null ? patient.getFullName() : null)
+                .age(patient != null && patient.getDob() != null
+                        ? Period.between(patient.getDob(), LocalDate.now()).getYears()
+                        : null)
+                .gender(patient != null && patient.getGender() != null
+                        ? patient.getGender().name()
                         : null)
                 .build();
 
@@ -236,6 +252,7 @@ public class SampleService {
                 .collectedAt(sample.getCollectedAt())
                 .collectedBy(sample.getCollectedBy())
                 .rejectionReason(sample.getRejectionReason())
+                .rejectionNotes(sample.getRejectionNotes())
                 .build();
     }
 
@@ -251,19 +268,42 @@ public class SampleService {
                 ? sample.getOrderItem().getOrder().getPatientId()
                 : null;
 
-        PatientResponse patient = patientId != null
-                ? patientClientService.getPatientByCode(patientId, securityUtils.getCurrentBearerToken())
-                : null;
+        PatientResponse patient = getPatientSafely(patientId);
+
+        TestCatalogEntity test = testCatalogRepository
+                .findById(sample.getOrderItem().getTestId()).orElse(null);
+        Instant eventTime = sample.getCollectedAt() != null ? sample.getCollectedAt() : sample.getRejectedAt();
+        String eventBy = sample.getCollectedBy() != null ? sample.getCollectedBy() : sample.getRejectedBy();
+        long waitTime = sample.getCreatedAt() != null && eventTime != null
+                ? java.time.temporal.ChronoUnit.MINUTES.between(sample.getCreatedAt(), eventTime)
+                : 0;
 
         return CollectionHistoryResponse.builder()
                 .id(sample.getId())
                 .sampleId(sample.getBarcode())
                 .patientName(patient != null ? patient.getFullName() : null)
                 .pid(patientId)
+                .testCodes(test != null ? List.of(test.getTestCode()) : List.of())
+                .tubeType(sample.getTubeType())
                 .priority(sample.getPriority())
                 .status(sample.getStatus())
-                .collectedAt(sample.getCollectedAt())
-                .collectedBy(sample.getCollectedBy())
+                .collectedAt(eventTime)
+                .collectedBy(eventBy)
+                .waitTime(waitTime)
+                .rejectionNotes(sample.getRejectionNotes())
                 .build();
+    }
+
+    private PatientResponse getPatientSafely(String patientId) {
+        if (patientId == null) {
+            return null;
+        }
+
+        try {
+            return patientClientService.getPatientByCode(patientId, securityUtils.getCurrentBearerToken());
+        } catch (Exception e) {
+            log.warn("Unable to enrich sample response with patient {} details", patientId, e);
+            return null;
+        }
     }
 }

@@ -70,4 +70,7 @@ public class SampleEntity extends BaseEntity {
     @Column(name = "rejection_reason")
     private RejectionReason rejectionReason;
 
+    @Column(name = "rejection_notes", length = 500)
+    private String rejectionNotes;
+
 }

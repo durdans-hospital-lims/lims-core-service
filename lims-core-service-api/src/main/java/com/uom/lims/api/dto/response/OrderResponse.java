@@ -12,7 +12,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * WHY: Delivers the core clinical tracking details of a patient episode without exposing internal financial logic.
+ * WHY: Delivers the core clinical tracking details of a patient episode without
+ * exposing internal financial logic.
  */
 @Getter
 @Setter
@@ -32,5 +33,7 @@ public class OrderResponse {
     private String referringDoctor;
     private String referringDepartment;
     private String remarks;
+    private String createdBy;
+    private com.uom.lims.api.enums.PaymentStatus paymentStatus;
     private List<OrderItemResponse> tests;
 }

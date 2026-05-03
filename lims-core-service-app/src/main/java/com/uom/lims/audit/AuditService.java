@@ -29,6 +29,30 @@ public class AuditService {
             String patientCode,
             String details,
             String ipAddress) {
+        fillAndSave(action, entityType, entityId, patientCode, details, ipAddress);
+    }
+
+    /**
+     * Persists an audit row in a new transaction (for HTTP handlers that are not already transactional).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void writeStandalone(
+            String action,
+            String entityType,
+            UUID entityId,
+            String patientCode,
+            String details,
+            String ipAddress) {
+        fillAndSave(action, entityType, entityId, patientCode, details, ipAddress);
+    }
+
+    private void fillAndSave(
+            String action,
+            String entityType,
+            UUID entityId,
+            String patientCode,
+            String details,
+            String ipAddress) {
         AuditLog auditLog = new AuditLog();
         auditLog.setAction(action);
         auditLog.setEntityType(entityType);

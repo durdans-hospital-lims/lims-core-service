@@ -19,4 +19,6 @@ public interface BillRepository extends JpaRepository<BillEntity, UUID> {
     Optional<BillEntity> findByBillNoAndDeletedFalse(String billNo);
     long countByPaymentStatusAndDeletedFalse(PaymentStatus status);
     Page<BillEntity> findAllByPaymentStatusAndDeletedFalse(PaymentStatus status, Pageable pageable);
+    Page<BillEntity> findAllByDeletedFalse(Pageable pageable);
 }
+

@@ -1,5 +1,6 @@
 package com.uom.lims.repository;
 
+import com.uom.lims.api.enums.PaymentStatus;
 import com.uom.lims.api.enums.Priority;
 import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.entity.SampleEntity;
@@ -22,9 +23,13 @@ public interface SampleRepository extends JpaRepository<SampleEntity, UUID>, Jpa
     Optional<SampleEntity> findByBarcodeAndDeletedFalse(String barcode);
     boolean existsByBarcodeAndDeletedFalse(String barcode);
     Page<SampleEntity> findAllByStatusAndDeletedFalse(SampleStatus status, Pageable pageable);
+    Page<SampleEntity> findAllByStatusAndOrderItem_Order_Bill_PaymentStatusAndDeletedFalse(
+            SampleStatus status, PaymentStatus paymentStatus, Pageable pageable);
     // WHY: Collection history combines COLLECTED and REJECTED — IN clause avoids two separate queries.
     Page<SampleEntity> findAllByStatusInAndDeletedFalse(List<SampleStatus> statuses, Pageable pageable);
     long countByStatusAndDeletedFalse(SampleStatus status);
+    long countByStatusAndOrderItem_Order_Bill_PaymentStatusAndDeletedFalse(
+            SampleStatus status, PaymentStatus paymentStatus);
     long countByStatusAndCollectedAtBetweenAndDeletedFalse(SampleStatus status, Instant start, Instant end);
     // WHY: Urgent count uses a DB-level filter on priority list — avoids loading all pending samples into memory.
     long countByStatusAndPriorityInAndDeletedFalse(SampleStatus status, List<Priority> priorities);

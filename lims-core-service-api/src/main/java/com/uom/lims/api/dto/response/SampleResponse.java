@@ -36,4 +36,5 @@ public class SampleResponse {
     private Instant collectedAt;
     private String collectedBy;
     private RejectionReason rejectionReason;
+    private String rejectionNotes;
 }

@@ -45,6 +45,9 @@ public class PaymentEntity extends BaseEntity {
     @Column(name = "insurance_claim_no")
     private String insuranceClaimNo;
 
+    @Column(name = "notes", length = 500)
+    private String notes;
+
     @Column(name = "payment_date", nullable = false)
     private Instant paymentDate;
 
