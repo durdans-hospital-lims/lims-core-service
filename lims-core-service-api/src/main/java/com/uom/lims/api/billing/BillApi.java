@@ -4,6 +4,7 @@ import com.uom.lims.api.dto.request.BillDiscountRequest;
 import com.uom.lims.api.dto.request.PaymentRequest;
 import com.uom.lims.api.dto.response.ApiResponse;
 import com.uom.lims.api.dto.response.BillResponse;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -46,4 +47,7 @@ public interface BillApi {
     @PostMapping("/bills/{billId}/print")
     @ResponseStatus(HttpStatus.OK)
     ResponseEntity<ApiResponse<BillResponse>> recordBillPrint(@PathVariable("billId") UUID billId);
+
 }
+
+

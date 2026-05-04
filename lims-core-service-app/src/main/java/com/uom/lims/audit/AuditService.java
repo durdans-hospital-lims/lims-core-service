@@ -29,11 +29,36 @@ public class AuditService {
             String patientCode,
             String details,
             String ipAddress) {
-        log(action, entityType, entityId, patientCode, details, ipAddress, null);
+        fillAndSave(action, entityType, entityId, patientCode, details, ipAddress, null);
+    }
+
+    /**
+     * Persists an audit row in a new transaction (for HTTP handlers that are not already transactional).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void writeStandalone(
+            String action,
+            String entityType,
+            UUID entityId,
+            String patientCode,
+            String details,
+            String ipAddress) {
+        fillAndSave(action, entityType, entityId, patientCode, details, ipAddress, null);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void log(
+            String action,
+            String entityType,
+            UUID entityId,
+            String patientCode,
+            String details,
+            String ipAddress,
+            String branchCodeOverride) {
+        fillAndSave(action, entityType, entityId, patientCode, details, ipAddress, branchCodeOverride);
+    }
+
+    private void fillAndSave(
             String action,
             String entityType,
             UUID entityId,

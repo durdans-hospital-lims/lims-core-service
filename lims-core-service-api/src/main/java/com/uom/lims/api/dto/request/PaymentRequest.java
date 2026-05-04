@@ -40,4 +40,7 @@ public class PaymentRequest {
 
     @Size(max = 100, message = "Insurance claim no too long")
     private String insuranceClaimNo;
+
+    @Size(max = 500, message = "Payment notes too long")
+    private String notes;
 }

@@ -25,4 +25,5 @@ public class PaymentResponse {
     private PaymentMethod paymentMethod;
     private Instant paymentDate;
     private boolean reversed;
+    private String notes;
 }
