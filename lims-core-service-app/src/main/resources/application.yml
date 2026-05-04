@@ -12,7 +12,7 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/durdans_lims_db}
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:Bima@postgresql}
+    password: ${DB_PASSWORD:sithumini}
     driver-class-name: org.postgresql.Driver
 
   jpa:

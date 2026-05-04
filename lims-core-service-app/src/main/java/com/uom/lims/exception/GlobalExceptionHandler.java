@@ -9,6 +9,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import com.uom.lims.api.dto.response.ApiResponse;
@@ -134,8 +135,10 @@ public class GlobalExceptionHandler {
                                                 "message", ex.getMessage()));
         }
 
-        // WHY: BusinessValidationException signals a domain rule violation (e.g. discount > 100%).
-        // HTTP 422 tells consumers the request was well-formed but semantically rejected.
+        // WHY: BusinessValidationException signals a domain rule violation (e.g.
+        // discount > 100%).
+        // HTTP 422 tells consumers the request was well-formed but semantically
+        // rejected.
         @ExceptionHandler(BusinessValidationException.class)
         public ResponseEntity<?> handleBusinessValidation(BusinessValidationException ex) {
                 log.warn("Business validation failed: {}", ex.getMessage());
@@ -147,8 +150,10 @@ public class GlobalExceptionHandler {
                                                 "message", ex.getMessage()));
         }
 
-        // WHY: InvalidStateTransitionException signals an illegal clinical workflow change
-        // (e.g. COMPLETED → PENDING). HTTP 422 distinguishes this from a 403 auth error.
+        // WHY: InvalidStateTransitionException signals an illegal clinical workflow
+        // change
+        // (e.g. COMPLETED → PENDING). HTTP 422 distinguishes this from a 403 auth
+        // error.
         @ExceptionHandler(InvalidStateTransitionException.class)
         public ResponseEntity<?> handleInvalidStateTransition(InvalidStateTransitionException ex) {
                 log.warn("Invalid state transition attempted: {}", ex.getMessage());
@@ -182,6 +187,17 @@ public class GlobalExceptionHandler {
                                                 "error", "Internal Server Error",
                                                 "message", ex.getMessage() != null ? ex.getMessage()
                                                                 : "An unexpected error occurred"));
+        }
+
+        @ExceptionHandler(BusinessRuleException.class)
+        public ResponseEntity<Map<String, Object>> handleBusinessRuleException(BusinessRuleException ex) {
+                Map<String, Object> body = new HashMap<>();
+                body.put("timestamp", LocalDateTime.now());
+                body.put("status", HttpStatus.UNPROCESSABLE_ENTITY.value());
+                body.put("error", "Business Rule Violation");
+                body.put("message", ex.getMessage());
+
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
         }
 
 }
