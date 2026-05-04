@@ -21,7 +21,7 @@ public class AccessioningController {
 
     private final MltTestingService mltTestingService;
     private final SampleService sampleService;
-    
+
     @GetMapping
     public ResponseEntity<List<MltWorklistItemResponse>> getCollectedSamples() {
         return ResponseEntity.ok(mltTestingService.getCollectedSamples());

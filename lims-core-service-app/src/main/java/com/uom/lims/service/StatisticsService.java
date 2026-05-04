@@ -62,8 +62,7 @@ public class StatisticsService {
         long yesterdayOrders = orderRepository.countByCreatedAtBetweenAndDeletedFalse(
                 yesterdayBounds[0], yesterdayBounds[1]);
 
-        long overduePayments = billRepository.countByPaymentStatusAndDeletedFalse(PaymentStatus.OVERDUE);
-        long partialPayments = billRepository.countByPaymentStatusAndDeletedFalse(PaymentStatus.PARTIAL);
+        long pendingPayments = billRepository.countByPaymentStatusAndDeletedFalse(PaymentStatus.PENDING);
 
         // WHY: Revenue today is the sum of all non-reversed payments received today.
         // WHY: We load all payments and filter in Java because the PaymentRepository
@@ -84,8 +83,7 @@ public class StatisticsService {
 
         return OrdersBillingStatsResponse.builder()
                 .testOrdersToday(testOrdersToday)
-                .overduePayments(overduePayments)
-                .partialPayments(partialPayments)
+                .pendingPayments(pendingPayments)
                 .totalRevenueToday(totalRevenueToday)
                 .trend(trend)
                 .build();
@@ -103,11 +101,14 @@ public class StatisticsService {
     public PhlebotomyStatsResponse getPhlebotomyStats() {
         Instant[] todayBounds = todayBounds();
 
-        long pendingCollections = sampleRepository.countByStatusAndDeletedFalse(SampleStatus.PENDING_COLLECTION);
+        long pendingCollections = sampleRepository.countByStatusAndOrderItem_Order_Bill_PaymentStatusAndDeletedFalse(
+                SampleStatus.PENDING_COLLECTION, PaymentStatus.PAID);
 
         // WHY: STAT and URGENT samples are counted together because both require
         // expedited processing — only NORMAL samples can be queued in standard order.
-        long urgentSamples = sampleRepository.findAllByStatusAndDeletedFalse(SampleStatus.PENDING_COLLECTION, Pageable.unpaged())
+        long urgentSamples = sampleRepository
+                .findAllByStatusAndOrderItem_Order_Bill_PaymentStatusAndDeletedFalse(
+                        SampleStatus.PENDING_COLLECTION, PaymentStatus.PAID, Pageable.unpaged())
                 .getContent().stream()
                 .filter(s -> s.getPriority() == Priority.STAT || s.getPriority() == Priority.URGENT)
                 .count();
