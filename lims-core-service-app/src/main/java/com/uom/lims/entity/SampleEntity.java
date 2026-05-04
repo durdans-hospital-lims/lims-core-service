@@ -11,16 +11,15 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.time.Instant;
 
 /**
- * WHY: Maps physical custody and handling properties for a clinical specimen tracking the medicolegal chain of custody.
+ * WHY: Maps physical custody and handling properties for a clinical specimen
+ * tracking the medicolegal chain of custody.
  */
 @Entity
 @Table(name = "samples")
@@ -72,5 +71,4 @@ public class SampleEntity extends BaseEntity {
 
     @Column(name = "rejection_notes", length = 500)
     private String rejectionNotes;
-
 }

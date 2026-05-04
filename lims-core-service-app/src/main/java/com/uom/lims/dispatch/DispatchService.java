@@ -66,8 +66,23 @@ public class DispatchService {
 
     @Transactional
     public DispatchItemResponse registerAuthorizedReport(RegisterAuthorizedReportRequest request, String ipAddress) {
+        return registerAuthorizedReportInternal(request, ipAddress, true);
+    }
+
+    @Transactional
+    public DispatchItemResponse registerAuthorizedReportSystem(RegisterAuthorizedReportRequest request, String ipAddress) {
+        return registerAuthorizedReportInternal(request, ipAddress, false);
+    }
+
+    private DispatchItemResponse registerAuthorizedReportInternal(
+            RegisterAuthorizedReportRequest request,
+            String ipAddress,
+            boolean validateBranchContext
+    ) {
         String branch = request.getBranchCode().trim().toUpperCase();
-        assertRegisterBranchAllowed(branch);
+        if (validateBranchContext) {
+            assertRegisterBranchAllowed(branch);
+        }
 
         LocalDateTime authorizedAt = request.getAuthorizedAt() != null
                 ? request.getAuthorizedAt().atZoneSameInstant(DISPLAY_ZONE).toLocalDateTime()
