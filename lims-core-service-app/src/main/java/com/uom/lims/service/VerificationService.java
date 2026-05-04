@@ -28,6 +28,7 @@ import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -142,17 +144,16 @@ public class VerificationService {
 
     @Transactional(readOnly = true)
     public Page<TestResultSummaryResponse> getPendingResults(int page, int size) {
-        Page<TestResultEntity> resultsPage = testResultRepository.findByStatusInAndDraftFalse(
-                List.of(ResultStatus.ENTERED, ResultStatus.RETURNED_FOR_RECHECK),
-                PageRequest.of(
-                        page,
-                        size,
-                        Sort.by(Sort.Order.desc("lastModifiedAt"), Sort.Order.desc("createdAt"))
-                ));
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(Sort.Order.desc("lastModifiedAt"), Sort.Order.desc("id")));
+        Page<SampleEntity> samplesPage = sampleRepository.findAllByStatusAndDeletedFalse(
+                SampleStatus.SENT_FOR_VERIFICATION,
+                pageable);
 
-        List<UUID> testIds = resultsPage.getContent().stream()
-                .map(this::safelyResolveTestId)
-                .filter(testId -> testId != null)
+        List<UUID> testIds = samplesPage.getContent().stream()
+                .map(sample -> sample.getOrderItem().getTestId())
                 .distinct()
                 .toList();
 
@@ -162,23 +163,93 @@ public class VerificationService {
                 .collect(Collectors.toMap(TestCatalogEntity::getId, TestCatalogEntity::getTestName));
 
         Map<String, String> patientNamesById = new HashMap<>();
-        resultsPage.getContent().stream()
-                .map(this::safelyResolvePatientId)
+        samplesPage.getContent().stream()
+                .map(sample -> sample.getOrderItem().getOrder().getPatientId())
                 .filter(patientId -> patientId != null && !patientId.isBlank())
                 .distinct()
                 .forEach(patientId -> patientNamesById.put(patientId, safelyResolvePatientName(patientId)));
 
-        return resultsPage.map(result -> testResultMapper.toSummaryResponse(
-                result,
-                testNamesById.get(safelyResolveTestId(result)),
-                patientNamesById.get(safelyResolvePatientId(result))));
+        return samplesPage.map(sample -> buildSupervisorQueueSummary(sample, testNamesById, patientNamesById));
+    }
+
+    /**
+     * One dashboard row per specimen/test order — not per analyte/parameter row.
+     */
+    private TestResultSummaryResponse buildSupervisorQueueSummary(
+            SampleEntity sample,
+            Map<UUID, String> testNamesById,
+            Map<String, String> patientNamesById) {
+        List<TestResultEntity> pending = testResultRepository.findBySampleId(sample.getId()).stream()
+                .filter(tr -> !tr.isDeleted())
+                .filter(tr -> !Boolean.TRUE.equals(tr.getDraft()))
+                .filter(tr -> tr.getStatus() == ResultStatus.ENTERED
+                        || tr.getStatus() == ResultStatus.RETURNED_FOR_RECHECK)
+                .toList();
+
+        if (pending.isEmpty()) {
+            TestResultEntity fallback = testResultRepository.findBySampleId(sample.getId()).stream()
+                    .filter(tr -> !tr.isDeleted())
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException(
+                            "No test results for sample in supervisor queue: " + sample.getId()));
+            UUID testId = sample.getOrderItem().getTestId();
+            String patientId = sample.getOrderItem().getOrder().getPatientId();
+            return testResultMapper.toSummaryResponse(
+                    fallback,
+                    testNamesById.getOrDefault(testId, "UNKNOWN_TEST"),
+                    patientNamesById.getOrDefault(patientId, "UNKNOWN_PATIENT"));
+        }
+
+        TestResultEntity primary = pending.stream()
+                .min(Comparator
+                        .comparing((TestResultEntity tr) -> tr.getParameter().getDisplayOrder(),
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(tr -> tr.getParameter().getName(), String.CASE_INSENSITIVE_ORDER))
+                .orElse(pending.get(0));
+
+        ResultFlag worstFlag = pending.stream()
+                .map(TestResultEntity::getFlag)
+                .filter(Objects::nonNull)
+                .max(Comparator.comparingInt(this::flagSeverity))
+                .orElse(null);
+
+        String aggregateStatus = pending.stream()
+                        .anyMatch(tr -> tr.getStatus() == ResultStatus.RETURNED_FOR_RECHECK)
+                ? ResultStatus.RETURNED_FOR_RECHECK.name()
+                : ResultStatus.ENTERED.name();
+
+        UUID testId = sample.getOrderItem().getTestId();
+        String patientId = sample.getOrderItem().getOrder().getPatientId();
+        String testName = testNamesById.getOrDefault(testId, "UNKNOWN_TEST");
+        String patientName = patientNamesById.getOrDefault(patientId, "UNKNOWN_PATIENT");
+
+        TestResultSummaryResponse base = testResultMapper.toSummaryResponse(primary, testName, patientName);
+        return TestResultSummaryResponse.builder()
+                .resultId(base.getResultId())
+                .status(aggregateStatus)
+                .patientName(base.getPatientName())
+                .testType(base.getTestType())
+                .mltName(base.getMltName())
+                .qcStatus(base.getQcStatus())
+                .flag(worstFlag != null ? worstFlag.name() : base.getFlag())
+                .createdAt(base.getCreatedAt())
+                .updatedAt(sample.getLastModifiedAt() != null ? sample.getLastModifiedAt() : base.getUpdatedAt())
+                .technicianName(base.getTechnicianName())
+                .pathologistName(base.getPathologistName())
+                .returnReason(pending.stream()
+                        .map(TestResultEntity::getReturnReason)
+                        .filter(reason -> reason != null && !reason.isBlank())
+                        .findFirst()
+                        .orElse(base.getReturnReason()))
+                .build();
     }
 
     @Transactional(readOnly = true)
     public List<BulkVerificationBatchResponse> getBulkWorklist() {
-        List<TestResultEntity> pendingResults = testResultRepository.findByStatusInAndDraftFalse(
-                List.of(ResultStatus.ENTERED, ResultStatus.RETURNED_FOR_RECHECK)
-        );
+        List<TestResultEntity> pendingResults = testResultRepository.findSupervisorPendingResults(
+                ResultStatus.ENTERED,
+                ResultStatus.RETURNED_FOR_RECHECK,
+                SampleStatus.SENT_FOR_VERIFICATION);
 
         Map<UUID, TestCatalogEntity> catalogsById = testCatalogRepository.findAllByIdInAndActiveTrueAndDeletedFalse(
                         pendingResults.stream()
@@ -264,13 +335,13 @@ public class VerificationService {
 
     @Transactional
     public TestResultDetailResponse verifyResult(UUID resultId, VerificationRequest request) {
-        TestResultEntity result = findResultById(resultId);
+        TestResultEntity anchor = findResultById(resultId);
 
-        if (result.getStatus() != ResultStatus.ENTERED
-                && result.getStatus() != ResultStatus.RETURNED_FOR_RECHECK) {
+        if (anchor.getStatus() != ResultStatus.ENTERED
+                && anchor.getStatus() != ResultStatus.RETURNED_FOR_RECHECK) {
             throw new IllegalStateException(
                     "Cannot verify result not in ENTERED or RETURNED_FOR_RECHECK status. Current: "
-                            + result.getStatus());
+                            + anchor.getStatus());
         }
 
         String username = SecurityUtils.getCurrentUsername();
@@ -278,47 +349,77 @@ public class VerificationService {
         String storedNotes = composeStoredNotes(request.getMltNotes(), request.getSupervisorNote());
         String historyNotes = resolveApprovalHistoryNotes(request.getSupervisorNote());
 
-        result.setStatus(ResultStatus.TECHNICALLY_VERIFIED);
-        result.getSample().setStatus(SampleStatus.VERIFIED);
-        result.setMltNotes(storedNotes);
-        result.setTechnicallyVerifiedBy(username);
-        result.setTechnicallyVerifiedAt(now);
-        result.setLastModifiedBy(username);
-        result.setLastModifiedAt(now);
+        List<TestResultEntity> targets = testResultRepository.findBySampleId(anchor.getSample().getId()).stream()
+                .filter(tr -> !tr.isDeleted())
+                .filter(tr -> !Boolean.TRUE.equals(tr.getDraft()))
+                .filter(tr -> tr.getStatus() == ResultStatus.ENTERED
+                        || tr.getStatus() == ResultStatus.RETURNED_FOR_RECHECK)
+                .toList();
 
-        TestResultEntity saved = testResultRepository.save(result);
-        logVerificationEvent(saved, ACTION_VERIFICATION_APPROVED, historyNotes);
-        return testResultMapper.toDetailResponse(saved);
+        if (targets.isEmpty()) {
+            throw new IllegalStateException("No pending parameter results to verify for this sample.");
+        }
+
+        SampleEntity sample = anchor.getSample();
+        sample.setStatus(SampleStatus.VERIFIED);
+
+        for (TestResultEntity result : targets) {
+            result.setStatus(ResultStatus.TECHNICALLY_VERIFIED);
+            result.setMltNotes(storedNotes);
+            result.setTechnicallyVerifiedBy(username);
+            result.setTechnicallyVerifiedAt(now);
+            result.setLastModifiedBy(username);
+            result.setLastModifiedAt(now);
+            testResultRepository.save(result);
+        }
+
+        logVerificationEvent(anchor, ACTION_VERIFICATION_APPROVED, historyNotes);
+        return getResultDetails(resultId);
     }
 
     @Transactional
     public TestResultDetailResponse rejectResult(UUID resultId, VerificationRequest request) {
-        TestResultEntity result = findResultById(resultId);
+        TestResultEntity anchor = findResultById(resultId);
 
-        if (result.getStatus() != ResultStatus.ENTERED
-                && result.getStatus() != ResultStatus.RETURNED_FOR_RECHECK) {
+        if (anchor.getStatus() != ResultStatus.ENTERED
+                && anchor.getStatus() != ResultStatus.RETURNED_FOR_RECHECK) {
             throw new IllegalStateException(
                     "Cannot reject result not in ENTERED or RETURNED_FOR_RECHECK status. Current: "
-                            + result.getStatus());
+                            + anchor.getStatus());
         }
 
         String username = SecurityUtils.getCurrentUsername();
         Instant now = Instant.now();
         String storedNotes = composeStoredNotes(request.getMltNotes(), request.getSupervisorNote());
 
-        result.setStatus(ResultStatus.REJECTED);
-        result.getSample().setStatus(SampleStatus.REJECTED);
-        result.setMltNotes(storedNotes);
-        result.setTechnicallyVerifiedBy(username);
-        result.setTechnicallyVerifiedAt(now);
-        result.setLastModifiedBy(username);
-        result.setLastModifiedAt(now);
+        List<TestResultEntity> targets = testResultRepository.findBySampleId(anchor.getSample().getId()).stream()
+                .filter(tr -> !tr.isDeleted())
+                .filter(tr -> !Boolean.TRUE.equals(tr.getDraft()))
+                .filter(tr -> tr.getStatus() == ResultStatus.ENTERED
+                        || tr.getStatus() == ResultStatus.RETURNED_FOR_RECHECK)
+                .toList();
 
-        TestResultEntity saved = testResultRepository.save(result);
-        logVerificationEvent(saved, ACTION_RETURNED_TO_MLT, resolveHistoryNotes(
+        if (targets.isEmpty()) {
+            throw new IllegalStateException("No pending parameter results to return to MLT for this sample.");
+        }
+
+        SampleEntity sample = anchor.getSample();
+        sample.setStatus(SampleStatus.IN_TESTING);
+
+        for (TestResultEntity result : targets) {
+            result.setStatus(ResultStatus.RETURNED_FOR_RECHECK);
+            result.setMltNotes(storedNotes);
+            result.setTechnicallyVerifiedBy(username);
+            result.setTechnicallyVerifiedAt(now);
+            result.setLastModifiedBy(username);
+            result.setLastModifiedAt(now);
+            testResultRepository.save(result);
+        }
+
+        logVerificationEvent(anchor, ACTION_RETURNED_TO_MLT, resolveHistoryNotes(
                 ACTION_RETURNED_TO_MLT,
                 sanitizeHistoryNote(extractMltNote(storedNotes))));
-        return testResultMapper.toDetailResponse(saved);
+        return getResultDetails(resultId);
     }
 
     @Transactional

@@ -123,6 +123,36 @@ public class GlobalExceptionHandler {
                                                 "details", errors));
         }
 
+        @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+        public ResponseEntity<?> handleUnreadableRequest(
+                        org.springframework.http.converter.HttpMessageNotReadableException ex) {
+                log.warn("Malformed request body: {}", ex.getMessage());
+
+                String message = "Please check the form values and try again.";
+                Throwable cause = ex.getCause();
+                if (cause instanceof com.fasterxml.jackson.databind.exc.InvalidFormatException invalidFormat
+                                && invalidFormat.getTargetType().isEnum()) {
+                        String fieldName = invalidFormat.getPath().isEmpty()
+                                        ? "selected field"
+                                        : invalidFormat.getPath().get(invalidFormat.getPath().size() - 1).getFieldName();
+                        message = "Please choose a valid " + toReadableFieldName(fieldName) + ".";
+                }
+
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                                Map.of(
+                                                "timestamp", LocalDateTime.now(),
+                                                "status", HttpStatus.BAD_REQUEST.value(),
+                                                "error", "Invalid Request",
+                                                "message", message));
+        }
+
+        private String toReadableFieldName(String fieldName) {
+                if (fieldName == null || fieldName.isBlank()) {
+                        return "selected field";
+                }
+                return fieldName.replaceAll("([a-z])([A-Z])", "$1 $2").toLowerCase();
+        }
+
         @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
         public ResponseEntity<?> handleNoResourceFoundException(
                         org.springframework.web.servlet.resource.NoResourceFoundException ex) {

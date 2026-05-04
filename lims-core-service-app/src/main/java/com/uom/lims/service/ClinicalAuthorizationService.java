@@ -14,6 +14,7 @@ import com.uom.lims.audit.AuditLogRepository;
 import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.audit.AuditService;
 import com.uom.lims.api.verification.enums.ResultStatus;
+import com.uom.lims.entity.SampleEntity;
 import com.uom.lims.entity.TestCatalogEntity;
 import com.uom.lims.entity.TestResultEntity;
 import com.uom.lims.event.ClinicalReportAuthorizedEvent;
@@ -23,12 +24,14 @@ import com.uom.lims.mapper.TestResultMapper;
 import com.uom.lims.metadata.BranchRepository;
 import com.uom.lims.patient.PatientEntity;
 import com.uom.lims.patient.PatientRepository;
+import com.uom.lims.repository.SampleRepository;
 import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -44,6 +47,7 @@ import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -62,6 +66,7 @@ public class ClinicalAuthorizationService {
     private final AuditLogRepository auditLogRepository;
     private final ObjectMapper objectMapper;
     private final TestResultRepository testResultRepository;
+    private final SampleRepository sampleRepository;
     private final TestCatalogRepository testCatalogRepository;
     private final TestResultMapper testResultMapper;
     private final PatientRepository patientRepository;
@@ -70,19 +75,16 @@ public class ClinicalAuthorizationService {
 
     @Transactional(readOnly = true)
     public Page<TestResultSummaryResponse> getPendingResults(int page, int size) {
-        Page<TestResultEntity> resultsPage = testResultRepository
-                .findByStatusAndDraftFalse(
-                        ResultStatus.TECHNICALLY_VERIFIED,
-                        PageRequest.of(
-                                page,
-                                size,
-                                Sort.by(Sort.Order.desc("lastModifiedAt"), Sort.Order.desc("createdAt"))
-                        )
-                );
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(Sort.Order.desc("lastModifiedAt"), Sort.Order.desc("id")));
+        Page<SampleEntity> samplesPage = sampleRepository.findAllByStatusAndDeletedFalse(
+                SampleStatus.VERIFIED,
+                pageable);
 
-        List<UUID> testIds = resultsPage.getContent().stream()
-                .map(this::safelyResolveTestId)
-                .filter(testId -> testId != null)
+        List<UUID> testIds = samplesPage.getContent().stream()
+                .map(sample -> sample.getOrderItem().getTestId())
                 .distinct()
                 .toList();
 
@@ -92,17 +94,76 @@ public class ClinicalAuthorizationService {
                 .collect(Collectors.toMap(TestCatalogEntity::getId, TestCatalogEntity::getTestName));
 
         Map<String, String> patientNamesById = new HashMap<>();
-        resultsPage.getContent().stream()
-                .map(this::safelyResolvePatientId)
+        samplesPage.getContent().stream()
+                .map(sample -> sample.getOrderItem().getOrder().getPatientId())
                 .filter(patientId -> patientId != null && !patientId.isBlank())
                 .distinct()
                 .forEach(patientId -> patientNamesById.put(patientId, safelyResolvePatientName(patientId)));
 
-        return resultsPage.map(result -> testResultMapper.toSummaryResponse(
-                result,
-                testNamesById.get(safelyResolveTestId(result)),
-                patientNamesById.get(safelyResolvePatientId(result))
-        ));
+        return samplesPage.map(sample -> buildClinicalQueueSummary(sample, testNamesById, patientNamesById));
+    }
+
+    /** One pathologist worklist row per completed lab verification (specimen), not per parameter. */
+    private TestResultSummaryResponse buildClinicalQueueSummary(
+            SampleEntity sample,
+            Map<UUID, String> testNamesById,
+            Map<String, String> patientNamesById) {
+        List<TestResultEntity> verifiedParams = testResultRepository.findBySampleId(sample.getId()).stream()
+                .filter(tr -> !tr.isDeleted())
+                .filter(tr -> !Boolean.TRUE.equals(tr.getDraft()))
+                .filter(tr -> tr.getStatus() == ResultStatus.TECHNICALLY_VERIFIED)
+                .toList();
+
+        UUID testId = sample.getOrderItem().getTestId();
+        String patientId = sample.getOrderItem().getOrder().getPatientId();
+        String testName = testNamesById.getOrDefault(testId, "UNKNOWN_TEST");
+        String patientName = patientNamesById.getOrDefault(patientId, "UNKNOWN_PATIENT");
+
+        if (verifiedParams.isEmpty()) {
+            TestResultEntity fallback = testResultRepository.findBySampleId(sample.getId()).stream()
+                    .filter(tr -> !tr.isDeleted())
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException(
+                            "No test results for clinically pending sample: " + sample.getId()));
+            return testResultMapper.toSummaryResponse(fallback, testName, patientName);
+        }
+
+        TestResultEntity primary = verifiedParams.stream()
+                .min(Comparator
+                        .comparing((TestResultEntity tr) -> tr.getParameter().getDisplayOrder(),
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(tr -> tr.getParameter().getName(), String.CASE_INSENSITIVE_ORDER))
+                .orElse(verifiedParams.get(0));
+
+        ResultFlag worstFlag = verifiedParams.stream()
+                .map(TestResultEntity::getFlag)
+                .filter(Objects::nonNull)
+                .max(Comparator.comparingInt(this::clinicalFlagSeverity))
+                .orElse(null);
+
+        TestResultSummaryResponse base = testResultMapper.toSummaryResponse(primary, testName, patientName);
+        return TestResultSummaryResponse.builder()
+                .resultId(base.getResultId())
+                .status(ResultStatus.TECHNICALLY_VERIFIED.name())
+                .patientName(base.getPatientName())
+                .testType(base.getTestType())
+                .mltName(base.getMltName())
+                .qcStatus(base.getQcStatus())
+                .flag(worstFlag != null ? worstFlag.name() : base.getFlag())
+                .createdAt(base.getCreatedAt())
+                .updatedAt(sample.getLastModifiedAt() != null ? sample.getLastModifiedAt() : base.getUpdatedAt())
+                .technicianName(base.getTechnicianName())
+                .pathologistName(base.getPathologistName())
+                .returnReason(base.getReturnReason())
+                .build();
+    }
+
+    private int clinicalFlagSeverity(ResultFlag flag) {
+        return switch (flag) {
+            case NORMAL -> 0;
+            case LOW, HIGH -> 1;
+            case CRITICAL_LOW, CRITICAL_HIGH -> 2;
+        };
     }
 
     @Transactional(readOnly = true)
@@ -135,59 +196,77 @@ public class ClinicalAuthorizationService {
 
     @Transactional
     public TestResultDetailResponse authorizeResult(UUID resultId, ClinicalAuthRequest request) {
-        TestResultEntity result = findResultById(resultId);
-
-        if (result.getStatus() != ResultStatus.TECHNICALLY_VERIFIED) {
-            throw new InvalidStateTransitionException(
-                    "Cannot authorize result not in TECHNICALLY_VERIFIED status. Current: "
-                            + result.getStatus());
-        }
+        TestResultEntity anchor = findResultById(resultId);
 
         if (!Boolean.TRUE.equals(request.getSignatureConfirmed())) {
             throw new InvalidRequestException("Pathologist signature confirmation is required before authorization.");
         }
 
-        String username = SecurityUtils.getCurrentUsername();
-        Instant now = Instant.now();
+        List<TestResultEntity> targets = testResultRepository.findBySampleId(anchor.getSample().getId()).stream()
+                .filter(tr -> !tr.isDeleted())
+                .filter(tr -> !Boolean.TRUE.equals(tr.getDraft()))
+                .filter(tr -> tr.getStatus() == ResultStatus.TECHNICALLY_VERIFIED)
+                .toList();
 
-        result.setStatus(ResultStatus.CLINICALLY_AUTHORIZED);
-        result.getSample().setStatus(SampleStatus.AUTHORIZED);
-        result.setClinicalNote(request.getClinicalNote());
-        result.setClinicallyAuthorizedBy(username);
-        result.setClinicallyAuthorizedAt(now);
-        result.setLastModifiedBy(username);
-        result.setLastModifiedAt(now);
-
-        TestResultEntity saved = testResultRepository.save(result);
-        registerAuthorizedReportForDispatch(saved);
-        logClinicalAuthorized(saved, request.getClinicalNote());
-        return buildDetailResponse(saved);
-    }
-
-    @Transactional
-    public TestResultDetailResponse returnToMlt(UUID resultId, ReturnToMLTRequest request) {
-        TestResultEntity result = findResultById(resultId);
-
-        if (result.getStatus() != ResultStatus.TECHNICALLY_VERIFIED) {
+        if (targets.isEmpty()) {
             throw new InvalidStateTransitionException(
-                    "Cannot return result not in TECHNICALLY_VERIFIED status. Current: "
-                            + result.getStatus());
+                    "No technically verified parameters to authorize for this sample.");
         }
 
         String username = SecurityUtils.getCurrentUsername();
         Instant now = Instant.now();
+        SampleEntity sample = anchor.getSample();
+        sample.setStatus(SampleStatus.AUTHORIZED);
+        sampleRepository.save(sample);
 
-        result.setStatus(ResultStatus.RETURNED_FOR_RECHECK);
-        result.getSample().setStatus(SampleStatus.SENT_FOR_VERIFICATION);
-        result.setReturnReason(request.getReturnReason());
-        result.setReturnedBy(username);
-        result.setReturnedAt(now);
-        result.setLastModifiedBy(username);
-        result.setLastModifiedAt(now);
+        for (TestResultEntity result : targets) {
+            result.setStatus(ResultStatus.CLINICALLY_AUTHORIZED);
+            result.setClinicalNote(request.getClinicalNote());
+            result.setClinicallyAuthorizedBy(username);
+            result.setClinicallyAuthorizedAt(now);
+            result.setLastModifiedBy(username);
+            result.setLastModifiedAt(now);
+            testResultRepository.save(result);
+        }
 
-        TestResultEntity saved = testResultRepository.save(result);
-        logReturnedFromClinical(saved, request.getReturnReason());
-        return buildDetailResponse(saved);
+        registerAuthorizedReportForDispatch(anchor);
+        logClinicalAuthorized(anchor, request.getClinicalNote());
+        return buildDetailResponse(anchor);
+    }
+
+    @Transactional
+    public TestResultDetailResponse returnToMlt(UUID resultId, ReturnToMLTRequest request) {
+        TestResultEntity anchor = findResultById(resultId);
+
+        List<TestResultEntity> targets = testResultRepository.findBySampleId(anchor.getSample().getId()).stream()
+                .filter(tr -> !tr.isDeleted())
+                .filter(tr -> !Boolean.TRUE.equals(tr.getDraft()))
+                .filter(tr -> tr.getStatus() == ResultStatus.TECHNICALLY_VERIFIED)
+                .toList();
+
+        if (targets.isEmpty()) {
+            throw new InvalidStateTransitionException(
+                    "No technically verified parameters to return to the lab for this sample.");
+        }
+
+        String username = SecurityUtils.getCurrentUsername();
+        Instant now = Instant.now();
+        SampleEntity sample = anchor.getSample();
+        sample.setStatus(SampleStatus.SENT_FOR_VERIFICATION);
+        sampleRepository.save(sample);
+
+        for (TestResultEntity result : targets) {
+            result.setStatus(ResultStatus.RETURNED_FOR_RECHECK);
+            result.setReturnReason(request.getReturnReason());
+            result.setReturnedBy(username);
+            result.setReturnedAt(now);
+            result.setLastModifiedBy(username);
+            result.setLastModifiedAt(now);
+            testResultRepository.save(result);
+        }
+
+        logReturnedFromClinical(anchor, request.getReturnReason());
+        return buildDetailResponse(anchor);
     }
 
     private TestResultDetailResponse buildDetailResponse(TestResultEntity result) {

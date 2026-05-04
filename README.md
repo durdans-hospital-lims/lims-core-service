@@ -43,7 +43,7 @@ The project strictly follows a **multi-module structure** to enforce separation 
 Ensure the following tools and dependencies are running on your local machine before starting the application:
 
 - **Java 21 JDK**
-- **PostgreSQL**: Port `5433` (as configured for local development)
+- **PostgreSQL (LIMS DB)**: Port `5434` (see `lims-infrastructure/docker-compose.yml` service `lims-postgres`; Keycloak’s DB uses `5433` separately)
 - **Keycloak**: Port `8081` (Realm: `lims-realm`)
 - **Apache Kafka**: Port `9092`
 - **LocalStack**: Port `4566` (Used to mock Amazon S3 for `lims-patient-documents` bucket locally)

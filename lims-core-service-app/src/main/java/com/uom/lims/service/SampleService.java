@@ -66,8 +66,7 @@ public class SampleService {
      */
     @Transactional(readOnly = true)
     public Page<SampleResponse> getPendingSamples(Pageable pageable) {
-        return sampleRepository.findAllByStatusAndOrderItem_Order_Bill_PaymentStatusAndDeletedFalse(
-                        SampleStatus.PENDING_COLLECTION, PaymentStatus.PAID, pageable)
+        return sampleRepository.findAllByStatusAndDeletedFalse(SampleStatus.PENDING_COLLECTION, pageable)
                 .map(this::toResponse);
     }
 

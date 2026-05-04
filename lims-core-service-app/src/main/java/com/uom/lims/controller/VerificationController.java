@@ -27,7 +27,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.List;
 
 @RequiredArgsConstructor
 @RestController
@@ -37,14 +36,14 @@ public class VerificationController {
 
     private final VerificationService verificationService;
 
-    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('LAB_SUPERVISOR','BRANCH_ADMIN','SUPER_ADMIN')")
     @GetMapping("/pending")
     @Operation(summary = "Get pending samples for supervisor verification queue")
     public ResponseEntity<List<VerificationPendingItemResponse>> getPendingSamples() {
         return ResponseEntity.ok(verificationService.getPendingSamples());
     }
 
-    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('LAB_SUPERVISOR','BRANCH_ADMIN','SUPER_ADMIN')")
     @GetMapping("/pending-results")
     @Operation(summary = "Get pending test results for technical verification")
     public PageResponse<TestResultSummaryResponse> getPendingResults(
@@ -62,7 +61,7 @@ public class VerificationController {
                 result.isLast());
     }
 
-    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('LAB_SUPERVISOR','BRANCH_ADMIN','SUPER_ADMIN')")
     @GetMapping("/history")
     @Operation(summary = "Get verification history items")
     public PageResponse<VerificationHistoryItemResponse> getVerificationHistory(
@@ -84,14 +83,14 @@ public class VerificationController {
         );
     }
 
-    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('LAB_SUPERVISOR','BRANCH_ADMIN','SUPER_ADMIN')")
     @GetMapping("/{resultId:[0-9a-fA-F\\-]{36}}")
     @Operation(summary = "Get test result details for technical verification")
     public TestResultDetailResponse getResultDetails(@PathVariable UUID resultId) {
         return verificationService.getResultDetails(resultId);
     }
 
-    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('LAB_SUPERVISOR','BRANCH_ADMIN','SUPER_ADMIN')")
     @PostMapping("/{resultId:[0-9a-fA-F\\-]{36}}/verify")
     @Operation(summary = "Technically verify a test result")
     public TestResultDetailResponse verifyResult(
@@ -101,7 +100,7 @@ public class VerificationController {
         return verificationService.verifyResult(resultId, request);
     }
 
-    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('LAB_SUPERVISOR','BRANCH_ADMIN','SUPER_ADMIN')")
     @PostMapping("/{resultId:[0-9a-fA-F\\-]{36}}/reject")
     @Operation(summary = "Reject a test result during technical verification")
     public TestResultDetailResponse rejectResult(
@@ -111,14 +110,14 @@ public class VerificationController {
         return verificationService.rejectResult(resultId, request);
     }
 
-    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('LAB_SUPERVISOR','BRANCH_ADMIN','SUPER_ADMIN')")
     @GetMapping("/bulk/worklist")
     @Operation(summary = "Get grouped bulk verification worklist")
     public List<BulkVerificationBatchResponse> getBulkWorklist() {
         return verificationService.getBulkWorklist();
     }
 
-    @PreAuthorize("hasRole('LAB_SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('LAB_SUPERVISOR','BRANCH_ADMIN','SUPER_ADMIN')")
     @PostMapping("/bulk-verify")
     @Operation(summary = "Bulk verify test results")
     public Map<String, String> bulkVerify(@Valid @RequestBody BulkVerificationRequest request) {
