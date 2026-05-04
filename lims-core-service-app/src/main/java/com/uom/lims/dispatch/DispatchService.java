@@ -376,6 +376,7 @@ public class DispatchService {
                 String pattern = "%" + kw.toLowerCase(Locale.ROOT) + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("reportReference")), pattern),
+                        cb.like(cb.lower(root.get("patientCode")), pattern),
                         cb.like(cb.lower(root.get("patientDisplayName")), pattern),
                         cb.like(cb.lower(root.get("testPanelLabel")), pattern)));
             });
@@ -404,6 +405,7 @@ public class DispatchService {
                 String pattern = "%" + kw.toLowerCase(Locale.ROOT) + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("reportReference")), pattern),
+                        cb.like(cb.lower(root.get("patientCode")), pattern),
                         cb.like(cb.lower(root.get("patientDisplayName")), pattern),
                         cb.like(cb.lower(root.get("testPanelLabel")), pattern)));
             });

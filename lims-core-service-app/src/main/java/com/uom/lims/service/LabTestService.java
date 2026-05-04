@@ -48,6 +48,9 @@ public class LabTestService {
                 .testName(entity.getTestName())
                 .category(entity.getCategory())
                 .price(entity.getPrice())
+                .sampleType(entity.getSampleType())
+                .tubeType(entity.getTubeType().name())
+                .turnAroundTimeHours(entity.getTurnAroundTimeHours())
                 .build();
     }
 }

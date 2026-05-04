@@ -41,7 +41,7 @@ public class DispatchController implements DispatchApi {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('DISPATCH_OFFICER','DISPATCH','SUPER_ADMIN','BRANCH_ADMIN')")
+    @PreAuthorize("hasAnyRole('DISPATCH_OFFICER','DISPATCH','FRONT_DESK','SUPER_ADMIN','BRANCH_ADMIN','LAB_SUPERVISOR','MLT','PATHOLOGIST')")
     public PageResponse<DispatchDashboardItemResponse> listDispatchReports(
             DispatchItemStatus status,
             String branchCode,
@@ -53,13 +53,13 @@ public class DispatchController implements DispatchApi {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('DISPATCH_OFFICER','DISPATCH','SUPER_ADMIN','BRANCH_ADMIN')")
+    @PreAuthorize("hasAnyRole('DISPATCH_OFFICER','DISPATCH','FRONT_DESK','SUPER_ADMIN','BRANCH_ADMIN','LAB_SUPERVISOR','MLT','PATHOLOGIST')")
     public DispatchItemResponse getDispatchReport(String reportReference, String branchCode) {
         return dispatchService.getDispatchReport(reportReference, branchCode);
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('DISPATCH_OFFICER','DISPATCH','SUPER_ADMIN','BRANCH_ADMIN')")
+    @PreAuthorize("hasAnyRole('DISPATCH_OFFICER','DISPATCH','FRONT_DESK','SUPER_ADMIN','BRANCH_ADMIN','LAB_SUPERVISOR','MLT','PATHOLOGIST')")
     public PageResponse<DeliveryRecordResponse> listDeliveryRecords(
             DispatchItemStatus status,
             String branchCode,
@@ -71,7 +71,7 @@ public class DispatchController implements DispatchApi {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('DISPATCH_OFFICER','DISPATCH','SUPER_ADMIN','BRANCH_ADMIN')")
+    @PreAuthorize("hasAnyRole('DISPATCH_OFFICER','DISPATCH','SUPER_ADMIN','BRANCH_ADMIN','LAB_SUPERVISOR','MLT','PATHOLOGIST')")
     public List<FailedDeliveryResponse> listFailedDeliveries(String branchCode, int limit) {
         return dispatchService.listFailedDeliveries(branchCode, limit);
     }

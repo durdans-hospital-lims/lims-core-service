@@ -38,7 +38,8 @@ public class SecurityConfig {
                         // Role-restricted endpoints
                         .requestMatchers("/api/v1/mlt/**").hasAnyRole("MLT", "LAB_SUPERVISOR", "BRANCH_ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/api/v1/reception/**").hasAnyRole("LAB_RECEPTIONIST", "LAB_RECEPTION", "BRANCH_ADMIN", "SUPER_ADMIN")
-                        .requestMatchers("/api/v1/verification/**").hasRole("LAB_SUPERVISOR")
+                        .requestMatchers("/api/v1/verification/**")
+                                .hasAnyRole("LAB_SUPERVISOR", "BRANCH_ADMIN", "SUPER_ADMIN")
 
                         // All other API endpoints require authentication
                         .requestMatchers("/api/**").authenticated()

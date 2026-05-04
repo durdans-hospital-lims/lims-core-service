@@ -5,6 +5,7 @@ import com.uom.lims.api.dto.response.PhlebotomyStatsResponse;
 import com.uom.lims.api.enums.PaymentStatus;
 import com.uom.lims.api.enums.Priority;
 import com.uom.lims.api.enums.SampleStatus;
+import com.uom.lims.entity.BillEntity;
 import com.uom.lims.repository.BillRepository;
 import com.uom.lims.repository.OrderRepository;
 import com.uom.lims.repository.PaymentRepository;
@@ -62,17 +63,21 @@ public class StatisticsService {
         long yesterdayOrders = orderRepository.countByCreatedAtBetweenAndDeletedFalse(
                 yesterdayBounds[0], yesterdayBounds[1]);
 
-        long pendingPayments = billRepository.countByPaymentStatusAndDeletedFalse(PaymentStatus.PENDING);
+        List<BillEntity> pendingBills = billRepository
+                .findAllByPaymentStatusAndDeletedFalse(PaymentStatus.PENDING, Pageable.unpaged())
+                .getContent();
+        long pendingPayments = pendingBills.size();
+        long partialPayments = pendingBills.stream()
+                .filter(bill -> bill.getPaidAmount() != null
+                        && bill.getTotalAmount() != null
+                        && bill.getPaidAmount().compareTo(BigDecimal.ZERO) > 0
+                        && bill.getPaidAmount().compareTo(bill.getTotalAmount()) < 0)
+                .count();
 
         // WHY: Revenue today is the sum of all non-reversed payments received today.
-        // WHY: We load all payments and filter in Java because the PaymentRepository
-        // does not yet expose a date-range sum query — keeping the repository interface
-        // minimal and adding custom queries only when required.
-        BigDecimal totalRevenueToday = paymentRepository.findAll().stream()
-                .filter(p -> !p.isReversed()
-                        && p.getPaymentDate() != null
-                        && !p.getPaymentDate().isBefore(todayBounds[0])
-                        && p.getPaymentDate().isBefore(todayBounds[1]))
+        BigDecimal totalRevenueToday = paymentRepository
+                .findAllByReversedFalseAndPaymentDateBetween(todayBounds[0], todayBounds[1])
+                .stream()
                 .map(p -> p.getAmount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -84,6 +89,8 @@ public class StatisticsService {
         return OrdersBillingStatsResponse.builder()
                 .testOrdersToday(testOrdersToday)
                 .pendingPayments(pendingPayments)
+                .overduePayments(pendingPayments)
+                .partialPayments(partialPayments)
                 .totalRevenueToday(totalRevenueToday)
                 .trend(trend)
                 .build();

@@ -1,6 +1,7 @@
 package com.uom.lims.repository;
 
 import com.uom.lims.api.verification.enums.ResultStatus;
+import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.entity.TestResultEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,6 +27,47 @@ public interface TestResultRepository extends JpaRepository<TestResultEntity, UU
     Page<TestResultEntity> findByStatusInAndDraftFalse(List<ResultStatus> statuses, Pageable pageable);
 
     List<TestResultEntity> findByStatusInAndDraftFalse(List<ResultStatus> statuses);
+
+    @Query("""
+            select tr
+            from TestResultEntity tr
+            join tr.sample s
+            where tr.draft = false
+              and tr.deleted = false
+              and s.deleted = false
+              and (
+                    tr.status = :enteredStatus
+                    or (
+                        tr.status = :returnedStatus
+                        and s.status = :supervisorQueueStatus
+                    )
+              )
+            """)
+    Page<TestResultEntity> findSupervisorPendingResults(
+            @Param("enteredStatus") ResultStatus enteredStatus,
+            @Param("returnedStatus") ResultStatus returnedStatus,
+            @Param("supervisorQueueStatus") SampleStatus supervisorQueueStatus,
+            Pageable pageable);
+
+    @Query("""
+            select tr
+            from TestResultEntity tr
+            join tr.sample s
+            where tr.draft = false
+              and tr.deleted = false
+              and s.deleted = false
+              and (
+                    tr.status = :enteredStatus
+                    or (
+                        tr.status = :returnedStatus
+                        and s.status = :supervisorQueueStatus
+                    )
+              )
+            """)
+    List<TestResultEntity> findSupervisorPendingResults(
+            @Param("enteredStatus") ResultStatus enteredStatus,
+            @Param("returnedStatus") ResultStatus returnedStatus,
+            @Param("supervisorQueueStatus") SampleStatus supervisorQueueStatus);
 
     @Query("""
             select tr

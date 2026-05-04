@@ -34,48 +34,48 @@ public class LabOperationsService {
     public List<InstrumentStatusResponse> getInstruments() {
         return List.of(
                 new InstrumentStatusResponse(
-                        "inst-001",
+                        "SYS_XN_1000",
                         "Sysmex XN-1000",
-                        "Haematology Analyser",
+                        "Automated hematology analyzer",
                         "XN-1000",
                         "SYS-2021-4421",
                         "online",
                         "2 mins ago",
                         142,
-                        "Haematology Lab — Bench 1",
+                        "Hematology Lab - Bench 1",
                         "PASS"),
                 new InstrumentStatusResponse(
-                        "inst-002",
-                        "Cobas c501",
-                        "Chemistry Analyser",
-                        "c501",
-                        "COB-2020-3312",
+                        "ROCHE_C311",
+                        "Roche cobas c 311",
+                        "Clinical chemistry analyzer",
+                        "c 311",
+                        "ROC-2020-3312",
                         "online",
                         "5 mins ago",
                         98,
-                        "Biochemistry Lab — Bench 2",
-                        "FAIL"),
-                new InstrumentStatusResponse(
-                        "inst-003",
-                        "BioMérieux VITEK 2",
-                        "Microbiology ID/AST",
-                        "VITEK 2",
-                        "VIT-2022-0091",
-                        "offline",
-                        "45 mins ago",
-                        12,
-                        "Microbiology Lab — Bench 4",
+                        "Biochemistry Lab - Bench 2",
                         "PASS"),
                 new InstrumentStatusResponse(
-                        "inst-004",
-                        "Cobas e411",
-                        "Immunoassay Analyser",
-                        "e411",
-                        "COB-2019-5521",
+                        "URINE_STRIP_READER",
+                        "Urine strip reader",
+                        "Semi-automated urinalysis workstation",
+                        "Urisys-class",
+                        "URI-2024-0091",
+                        "online",
+                        "7 mins ago",
+                        36,
+                        "Urinalysis Bench",
+                        "PASS"),
+                new InstrumentStatusResponse(
+                        "BARCODE_PRINTER",
+                        "Thermal barcode label printer",
+                        "Sample label printer",
+                        "ZD-class",
+                        "LBL-2025-5521",
                         "busy",
                         "1 min ago",
-                        64,
-                        "Immunology Lab — Bench 3",
+                        211,
+                        "Collection Desk",
                         "WARN"));
     }
 
@@ -101,11 +101,11 @@ public class LabOperationsService {
         Instant now = Instant.now();
 
         return List.of(
-                new QcRunItemResponse("qc-001", "Sysmex XN-1000", "Full Blood Count", "Normal", "5.2", "5.0 ± 0.3", "0.7 SD", "PASS", "MLT Aritha", TIME_FORMATTER.format(now.minusSeconds(5400))),
-                new QcRunItemResponse("qc-002", "Sysmex XN-1000", "Full Blood Count", "Low", "2.1", "2.0 ± 0.2", "0.5 SD", "PASS", "MLT Aritha", TIME_FORMATTER.format(now.minusSeconds(5280))),
-                new QcRunItemResponse("qc-003", "Cobas c501", "Lipid Panel", "Normal", "198", "200 ± 8", "-0.25 SD", "PASS", "MLT Silva", TIME_FORMATTER.format(now.minusSeconds(4500))),
-                new QcRunItemResponse("qc-004", "Cobas c501", "HbA1c", "High", "9.8", "8.5 ± 0.4", "3.25 SD", "FAIL", "MLT Silva", TIME_FORMATTER.format(now.minusSeconds(4320))),
-                new QcRunItemResponse("qc-005", "Cobas e411", "Thyroid Panel", "Normal", "4.1", "4.0 ± 0.5", "0.2 SD", "PASS", "MLT Perera", TIME_FORMATTER.format(now.minusSeconds(3600))),
-                new QcRunItemResponse("qc-006", "Cobas e411", "Cortisol", "Low", "3.8", "5.0 ± 0.8", "-1.5 SD", "WARN", "MLT Perera", TIME_FORMATTER.format(now.minusSeconds(3300))));
+                new QcRunItemResponse("qc-001", "Sysmex XN-1000", "Full Blood Count", "Normal", "5.2", "5.0 +/- 0.3", "0.7 SD", "PASS", "MLT Aritha", TIME_FORMATTER.format(now.minusSeconds(5400))),
+                new QcRunItemResponse("qc-002", "Sysmex XN-1000", "Full Blood Count", "Low", "2.1", "2.0 +/- 0.2", "0.5 SD", "PASS", "MLT Aritha", TIME_FORMATTER.format(now.minusSeconds(5280))),
+                new QcRunItemResponse("qc-003", "Roche cobas c 311", "Lipid Profile", "Normal", "198", "200 +/- 8", "-0.25 SD", "PASS", "MLT Silva", TIME_FORMATTER.format(now.minusSeconds(4500))),
+                new QcRunItemResponse("qc-004", "Roche cobas c 311", "HbA1c", "High", "9.8", "8.5 +/- 0.4", "3.25 SD", "WARN", "MLT Silva", TIME_FORMATTER.format(now.minusSeconds(4320))),
+                new QcRunItemResponse("qc-005", "Urine strip reader", "Urine Full Report", "Negative Control", "Negative", "Negative", "0 SD", "PASS", "MLT Perera", TIME_FORMATTER.format(now.minusSeconds(3600))),
+                new QcRunItemResponse("qc-006", "Urine strip reader", "Urine Full Report", "Positive Control", "Positive", "Positive", "0 SD", "PASS", "MLT Perera", TIME_FORMATTER.format(now.minusSeconds(3300))));
     }
 }

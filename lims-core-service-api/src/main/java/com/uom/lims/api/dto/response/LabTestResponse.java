@@ -22,4 +22,7 @@ public class LabTestResponse {
     private String testName;
     private String category;
     private BigDecimal price;
+    private String sampleType;
+    private String tubeType;
+    private Integer turnAroundTimeHours;
 }

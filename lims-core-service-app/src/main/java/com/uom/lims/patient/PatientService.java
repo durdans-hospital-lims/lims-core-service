@@ -372,12 +372,11 @@ public class PatientService {
                         weekCount = patientRepository.countByBranchCodeAndCreatedAtAfter(branchCode,
                                         beginningOfWeekInstant);
                         pendingVerifications = patientRepository
-                                        .countByBranchCodeAndEmailVerifiedFalseOrBranchCodeAndPhoneVerifiedFalse(
-                                                        branchCode, branchCode);
+                                        .countByBranchCodeAndEmailVerifiedFalseAndPhoneVerifiedFalse(branchCode);
                 } else {
                         todayCount = patientRepository.countByCreatedAtAfter(beginningOfTodayInstant);
                         weekCount = patientRepository.countByCreatedAtAfter(beginningOfWeekInstant);
-                        pendingVerifications = patientRepository.countByEmailVerifiedFalseOrPhoneVerifiedFalse();
+                        pendingVerifications = patientRepository.countByEmailVerifiedFalseAndPhoneVerifiedFalse();
                 }
 
                 String todayTrend = "+12% vs yesterday";

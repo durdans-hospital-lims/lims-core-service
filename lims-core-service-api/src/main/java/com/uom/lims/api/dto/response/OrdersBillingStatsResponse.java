@@ -20,6 +20,8 @@ import java.math.BigDecimal;
 public class OrdersBillingStatsResponse {
     private long testOrdersToday;
     private long pendingPayments;
+    private long overduePayments;
+    private long partialPayments;
 
     private BigDecimal totalRevenueToday;
     private String trend;

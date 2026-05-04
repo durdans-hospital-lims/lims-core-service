@@ -246,9 +246,18 @@ public class OrderService {
          */
         @Transactional(readOnly = true)
         public Page<OrderResponse> getOrders(Pageable pageable) {
+                return getOrders(pageable, null);
+        }
+
+        @Transactional(readOnly = true)
+        public Page<OrderResponse> getOrders(Pageable pageable, String patientId) {
+                String normalizedPatientId = patientId == null ? null : patientId.trim();
+                Page<OrderEntity> orders = normalizedPatientId == null || normalizedPatientId.isBlank()
+                                ? orderRepository.findAllByDeletedFalse(pageable)
+                                : orderRepository.findAllByPatientIdAndDeletedFalse(normalizedPatientId, pageable);
                 // WHY: Spring Data JPA derivation — findAllByDeletedFalse scopes out
                 // soft-deleted records.
-                return orderRepository.findAllByDeletedFalse(pageable)
+                return orders
                                 .map(order -> {
                                         // Fetch test catalog for enrichment
                                         List<UUID> testIds = order.getItems().stream()

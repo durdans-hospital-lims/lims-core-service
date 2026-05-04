@@ -10,23 +10,15 @@ import com.uom.lims.api.document.dto.response.DocumentResponse;
 import com.uom.lims.api.common.enums.DocumentType;
 import com.uom.lims.security.SecurityUtils;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import java.util.UUID;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
 import java.io.IOException;
 import java.security.MessageDigest;
@@ -56,9 +48,10 @@ public class PatientDocumentService {
         log.info("Starting document upload for patient: {}, type: {}, filename: {}",
                 patientCode, documentType, file.getOriginalFilename());
 
-        // Capture logged user from JWT
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String username = authentication.getName();
+        String uploadedBy = SecurityUtils.getCurrentDisplayName();
+        if (uploadedBy == null || uploadedBy.isBlank()) {
+            uploadedBy = "System";
+        }
 
         // 1️⃣ Validate file
         if (file.isEmpty()) {
@@ -130,7 +123,7 @@ public class PatientDocumentService {
         document.setS3Key(s3Key);
         document.setDescription(description);
         document.setFileHash(fileHash);
-        document.setUploadedBy(username);
+        document.setUploadedBy(uploadedBy);
         document.setUploadedIp(ipAddress);
         document.setBranchCode(branchCode);
 
@@ -290,9 +283,28 @@ public class PatientDocumentService {
                 .fileSize(entity.getFileSize())
                 .uploadedAt(entity.getCreatedAt() == null ? null
                                 : LocalDateTime.ofInstant(entity.getCreatedAt(), ZoneId.systemDefault()))
-                .uploadedBy(entity.getUploadedBy())
+                .uploadedBy(resolveUploadedByDisplayName(entity.getUploadedBy()))
                 .uploadedBranch(entity.getBranchCode())
                 .build();
+    }
+
+    private String resolveUploadedByDisplayName(String uploadedBy) {
+        if (uploadedBy == null || uploadedBy.isBlank()) {
+            return "System";
+        }
+
+        String currentDisplayName = SecurityUtils.getCurrentDisplayName();
+        if (currentDisplayName == null || currentDisplayName.isBlank()) {
+            return uploadedBy;
+        }
+
+        String currentUserId = SecurityUtils.getCurrentUserId();
+        String currentUsername = SecurityUtils.getCurrentUsername();
+        if (uploadedBy.equals(currentUserId) || uploadedBy.equals(currentUsername)) {
+            return currentDisplayName;
+        }
+
+        return uploadedBy;
     }
 
     private void validateFileExtension(MultipartFile file) {

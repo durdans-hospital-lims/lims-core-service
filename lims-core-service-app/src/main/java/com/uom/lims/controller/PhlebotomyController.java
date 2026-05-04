@@ -31,13 +31,13 @@ public class PhlebotomyController implements PhlebotomyApi {
     private final StatisticsService statisticsService;
 
     @Override
-    @PreAuthorize("hasRole('PHLEBOTOMIST')")
+    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK')")
     public ResponseEntity<ApiResponse<PhlebotomyStatsResponse>> getPhlebotomyStats() {
         return ResponseEntity.ok(ApiResponse.success(statisticsService.getPhlebotomyStats()));
     }
 
     @Override
-    @PreAuthorize("hasRole('PHLEBOTOMIST')")
+    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK')")
     public ResponseEntity<ApiResponse<PageResponse<SampleResponse>>> getPendingSamples(int page, int size) {
         Page<SampleResponse> result = sampleService.getPendingSamples(PageRequest.of(page, size));
         PageResponse<SampleResponse> response = new PageResponse<>(
@@ -52,19 +52,19 @@ public class PhlebotomyController implements PhlebotomyApi {
     }
 
     @Override
-    @PreAuthorize("hasRole('PHLEBOTOMIST')")
+    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK')")
     public ResponseEntity<ApiResponse<SampleResponse>> collectSample(UUID sampleId, SampleCollectRequest request) {
         return ResponseEntity.ok(ApiResponse.success(sampleService.collectSample(sampleId, request)));
     }
 
     @Override
-    @PreAuthorize("hasRole('PHLEBOTOMIST')")
+    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK')")
     public ResponseEntity<ApiResponse<SampleResponse>> rejectSample(UUID sampleId, SampleRejectRequest request) {
         return ResponseEntity.ok(ApiResponse.success(sampleService.rejectSample(sampleId, request)));
     }
 
     @Override
-    @PreAuthorize("hasRole('PHLEBOTOMIST')")
+    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK')")
     public ResponseEntity<ApiResponse<PageResponse<CollectionHistoryResponse>>> getCollectionHistory(int page, int size) {
         Page<CollectionHistoryResponse> result = sampleService.getCollectionHistory(PageRequest.of(page, size));
         PageResponse<CollectionHistoryResponse> response = new PageResponse<>(

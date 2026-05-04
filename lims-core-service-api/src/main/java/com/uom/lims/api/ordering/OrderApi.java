@@ -39,6 +39,7 @@ public interface OrderApi {
     ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> getOrders(
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "10") int size,
+            @RequestParam(name = "patientId", required = false) String patientId,
             @RequestParam(name = "sort", defaultValue = "createdAt,desc") String sort);
 
     @Operation(summary = "Get order by ID", description = "Retrieves full details of a specific order including test line items")
