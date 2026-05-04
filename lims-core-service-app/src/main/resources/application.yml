@@ -6,7 +6,7 @@ spring:
     name: lims-core-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5433/durdans_lims_db
+    url: jdbc:postgresql://localhost:your_port/durdans_lims_db
     username: your_username
     password: your_password
     driver-class-name: org.postgresql.Driver
