@@ -316,6 +316,7 @@ public class ClinicalAuthorizationService {
         return testResultMapper.toDetailResponse(
                 result,
                 caseResults,
+                patientId,
                 patientName,
                 testType,
                 patientAge,

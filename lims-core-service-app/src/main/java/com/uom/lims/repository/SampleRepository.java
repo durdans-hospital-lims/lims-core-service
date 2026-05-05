@@ -52,4 +52,8 @@ public interface SampleRepository extends JpaRepository<SampleEntity, UUID>, Jpa
     long countByStatusAndRejectedAtBetweenAndDeletedFalse(SampleStatus status, Instant start, Instant end);
 
     List<SampleEntity> findByStatusInAndDeletedFalseOrderByCollectedAtAsc(List<SampleStatus> statuses);
+
+    @Query("SELECT s FROM SampleEntity s WHERE s.deleted = false "
+            + "ORDER BY COALESCE(s.collectedAt, s.rejectedAt, s.createdAt) DESC")
+    List<SampleEntity> findAllMltWorklistSamples();
 }
