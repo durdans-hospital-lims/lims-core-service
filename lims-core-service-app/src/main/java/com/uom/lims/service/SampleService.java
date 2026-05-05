@@ -254,6 +254,21 @@ public class SampleService {
     }
 
     /**
+     * WHY: Label reprints must be traceable. The browser handles the physical print
+     * dialog, while the service records each approved print attempt against the
+     * specimen before the label is rendered.
+     */
+    public SampleResponse printSampleLabel(UUID sampleId) {
+        SampleEntity sample = sampleRepository.findById(sampleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Sample not found with id: " + sampleId));
+
+        sample.setPrintCount((sample.getPrintCount() == null ? 0 : sample.getPrintCount()) + 1);
+        SampleEntity saved = sampleRepository.save(sample);
+        log.info("Sample {} label print count incremented to {}", saved.getBarcode(), saved.getPrintCount());
+        return toResponse(saved);
+    }
+
+    /**
      * WHY: Centralized entity-to-DTO mapping keeps all field assignments in one
      * place. The patient info sub-object is populated with the patientId only —
      * full patient details must be fetched from the Patient service to avoid
@@ -300,6 +315,7 @@ public class SampleService {
                 .patient(patientInfo)
                 .collectedAt(sample.getCollectedAt())
                 .collectedBy(sample.getCollectedBy())
+                .printCount(sample.getPrintCount() != null ? sample.getPrintCount() : 0)
                 .rejectionReason(sample.getRejectionReason())
                 .rejectionNotes(sample.getRejectionNotes())
                 .build();
@@ -338,6 +354,7 @@ public class SampleService {
                 .status(sample.getStatus())
                 .collectedAt(eventTime)
                 .collectedBy(eventBy)
+                .printCount(sample.getPrintCount() != null ? sample.getPrintCount() : 0)
                 .waitTime(waitTime)
                 .rejectionNotes(sample.getRejectionNotes())
                 .build();

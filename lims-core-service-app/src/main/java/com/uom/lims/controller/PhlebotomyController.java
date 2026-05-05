@@ -64,6 +64,12 @@ public class PhlebotomyController implements PhlebotomyApi {
     }
 
     @Override
+    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','LAB_RECEPTIONIST','LAB_RECEPTION','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK')")
+    public ResponseEntity<ApiResponse<SampleResponse>> printSampleLabel(UUID sampleId) {
+        return ResponseEntity.ok(ApiResponse.success(sampleService.printSampleLabel(sampleId)));
+    }
+
+    @Override
     @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK')")
     public ResponseEntity<ApiResponse<PageResponse<CollectionHistoryResponse>>> getCollectionHistory(int page, int size) {
         Page<CollectionHistoryResponse> result = sampleService.getCollectionHistory(PageRequest.of(page, size));
