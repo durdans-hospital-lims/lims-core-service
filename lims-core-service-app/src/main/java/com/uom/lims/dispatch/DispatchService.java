@@ -9,6 +9,7 @@ import com.uom.lims.api.dispatch.dto.response.DeliveryAttemptResponse;
 import com.uom.lims.api.dispatch.dto.response.DeliveryRecordResponse;
 import com.uom.lims.api.dispatch.dto.response.DispatchDashboardItemResponse;
 import com.uom.lims.api.dispatch.dto.response.DispatchItemResponse;
+import com.uom.lims.api.dispatch.dto.response.DispatchReportResultResponse;
 import com.uom.lims.api.dispatch.dto.response.FailedDeliveryResponse;
 import com.uom.lims.api.dispatch.enums.DeliveryAttemptStatus;
 import com.uom.lims.api.dispatch.enums.DeliveryMethod;
@@ -23,6 +24,8 @@ import com.uom.lims.entity.TestResultEntity;
 import com.uom.lims.event.ReportDispatchDomainEvent;
 import com.uom.lims.exception.InvalidRequestException;
 import com.uom.lims.exception.ResourceNotFoundException;
+import com.uom.lims.patient.PatientEntity;
+import com.uom.lims.patient.PatientRepository;
 import com.uom.lims.repository.OrderItemRepository;
 import com.uom.lims.repository.OrderRepository;
 import com.uom.lims.repository.SampleRepository;
@@ -43,8 +46,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.Period;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -82,6 +89,7 @@ public class DispatchService {
     private final SampleRepository sampleRepository;
     private final OrderItemRepository orderItemRepository;
     private final OrderRepository orderRepository;
+    private final PatientRepository patientRepository;
 
     @Transactional
     public DispatchItemResponse registerAuthorizedReport(RegisterAuthorizedReportRequest request, String ipAddress) {
@@ -627,19 +635,151 @@ public class DispatchService {
     private DispatchItemResponse mapToDetailResponse(ReportDispatchItemEntity e) {
         List<ReportDeliveryAttemptEntity> attempts = attemptRepository.findByDispatchItemIdOrderByCreatedAtAsc(e.getId());
         List<DeliveryAttemptResponse> attemptDtos = attempts.stream().map(this::toAttemptDto).toList();
+        DispatchReportPayload reportPayload = resolveReportPayload(e);
         return DispatchItemResponse.builder()
                 .id(e.getId())
                 .reportReference(e.getReportReference())
                 .branchCode(e.getBranchCode())
-                .patientCode(e.getPatientCode())
-                .patientDisplayName(e.getPatientDisplayName())
+                .patientCode(Optional.ofNullable(reportPayload.patientCode()).orElse(e.getPatientCode()))
+                .patientDisplayName(Optional.ofNullable(reportPayload.patientName()).orElse(e.getPatientDisplayName()))
+                .patientAge(reportPayload.patientAge())
+                .patientGender(reportPayload.patientGender())
+                .patientDob(reportPayload.patientDob())
+                .referringDoctor(reportPayload.referringDoctor())
+                .ward(reportPayload.ward())
                 .testPanelLabel(e.getTestPanelLabel())
+                .sampleId(reportPayload.sampleId())
+                .sampleCollectedAt(reportPayload.sampleCollectedAt())
+                .reportGeneratedAt(reportPayload.reportGeneratedAt())
+                .authorizedBy(reportPayload.authorizedBy())
+                .clinicalNote(reportPayload.clinicalNote())
+                .results(reportPayload.results())
                 .artifactUri(e.getArtifactUri())
                 .authorizedAt(e.getAuthorizedAt().atZone(DISPLAY_ZONE).toOffsetDateTime())
                 .overallStatus(e.getOverallStatus())
                 .preferredDeliveryMethods(parsePreferredMethods(e))
                 .attempts(attemptDtos)
                 .build();
+    }
+
+    private DispatchReportPayload resolveReportPayload(ReportDispatchItemEntity item) {
+        UUID resultId;
+        try {
+            resultId = UUID.fromString(item.getReportReference());
+        } catch (IllegalArgumentException ignored) {
+            return DispatchReportPayload.empty();
+        }
+
+        Optional<TestResultEntity> anchorResult = testResultRepository.findById(resultId);
+        if (anchorResult.isEmpty()) {
+            return DispatchReportPayload.empty();
+        }
+
+        TestResultEntity anchor = anchorResult.get();
+        SampleEntity sample = anchor.getSample();
+        OrderItemEntity orderItem = sample == null ? null : sample.getOrderItem();
+        OrderEntity order = orderItem == null ? null : orderItem.getOrder();
+
+        String patientCode = order == null ? item.getPatientCode() : trimToNull(order.getPatientId());
+        PatientEntity patient = patientCode == null
+                ? null
+                : patientRepository.findByPatientCode(patientCode).orElse(null);
+
+        List<TestResultEntity> sampleResults = sample == null
+                ? List.of(anchor)
+                : testResultRepository.findBySampleId(sample.getId()).stream()
+                .filter(result -> !result.isDeleted())
+                .filter(result -> !Boolean.TRUE.equals(result.getDraft()))
+                .sorted(Comparator
+                        .comparing((TestResultEntity result) -> result.getParameter().getDisplayOrder(),
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(result -> result.getParameter().getName(), String.CASE_INSENSITIVE_ORDER))
+                .toList();
+
+        String authorizedBy = firstNonBlank(sampleResults.stream()
+                .map(TestResultEntity::getClinicallyAuthorizedBy)
+                .toList());
+        String clinicalNote = firstNonBlank(sampleResults.stream()
+                .map(TestResultEntity::getClinicalNote)
+                .toList());
+        OffsetDateTime authorizedAt = anchor.getClinicallyAuthorizedAt() == null
+                ? item.getAuthorizedAt().atZone(DISPLAY_ZONE).toOffsetDateTime()
+                : anchor.getClinicallyAuthorizedAt().atZone(DISPLAY_ZONE).toOffsetDateTime();
+
+        return new DispatchReportPayload(
+                patient == null ? patientCode : patient.getPatientCode(),
+                patient == null ? null : patient.getFullName(),
+                patient == null ? null : calculateAge(patient.getDob()),
+                patient == null || patient.getGender() == null ? null : patient.getGender().name(),
+                patient == null ? null : patient.getDob(),
+                order == null ? null : trimToNull(order.getReferringDoctor()),
+                order == null ? null : trimToNull(order.getReferringDepartment()),
+                sample == null ? null : sample.getBarcode(),
+                sample == null || sample.getCollectedAt() == null ? null : sample.getCollectedAt().atZone(DISPLAY_ZONE).toOffsetDateTime(),
+                authorizedAt,
+                authorizedBy,
+                clinicalNote,
+                sampleResults.stream().map(this::toDispatchResult).toList());
+    }
+
+    private DispatchReportResultResponse toDispatchResult(TestResultEntity result) {
+        String flag = result.getFlag() == null ? null : result.getFlag().name();
+        return DispatchReportResultResponse.builder()
+                .parameter(result.getParameter().getName())
+                .result(result.getResultValue())
+                .unit(result.getParameter().getUnit())
+                .flag(flag)
+                .referenceRange(formatReferenceRange(result.getParameter().getRefLow(), result.getParameter().getRefHigh()))
+                .abnormal(flag != null && !"NORMAL".equals(flag))
+                .build();
+    }
+
+    private String formatReferenceRange(BigDecimal low, BigDecimal high) {
+        if (low == null && high == null) {
+            return null;
+        }
+        if (low == null) {
+            return "<= " + formatDecimal(high);
+        }
+        if (high == null) {
+            return ">= " + formatDecimal(low);
+        }
+        return formatDecimal(low) + " - " + formatDecimal(high);
+    }
+
+    private String formatDecimal(BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString();
+    }
+
+    private Integer calculateAge(LocalDate dob) {
+        return dob == null ? null : Period.between(dob, LocalDate.now(DISPLAY_ZONE)).getYears();
+    }
+
+    private String firstNonBlank(List<String> values) {
+        return values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElse(null);
+    }
+
+    private record DispatchReportPayload(
+            String patientCode,
+            String patientName,
+            Integer patientAge,
+            String patientGender,
+            LocalDate patientDob,
+            String referringDoctor,
+            String ward,
+            String sampleId,
+            OffsetDateTime sampleCollectedAt,
+            OffsetDateTime reportGeneratedAt,
+            String authorizedBy,
+            String clinicalNote,
+            List<DispatchReportResultResponse> results
+    ) {
+        static DispatchReportPayload empty() {
+            return new DispatchReportPayload(null, null, null, null, null, null, null, null, null, null, null, null, List.of());
+        }
     }
 
     private DeliveryAttemptResponse toAttemptDto(ReportDeliveryAttemptEntity a) {

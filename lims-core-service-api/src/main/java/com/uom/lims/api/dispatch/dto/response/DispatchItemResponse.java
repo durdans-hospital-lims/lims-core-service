@@ -8,6 +8,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -24,7 +25,18 @@ public class DispatchItemResponse {
     private String branchCode;
     private String patientCode;
     private String patientDisplayName;
+    private Integer patientAge;
+    private String patientGender;
+    private LocalDate patientDob;
+    private String referringDoctor;
+    private String ward;
     private String testPanelLabel;
+    private String sampleId;
+    private OffsetDateTime sampleCollectedAt;
+    private OffsetDateTime reportGeneratedAt;
+    private String authorizedBy;
+    private String clinicalNote;
+    private List<DispatchReportResultResponse> results;
     private String artifactUri;
     private OffsetDateTime authorizedAt;
     private DispatchItemStatus overallStatus;

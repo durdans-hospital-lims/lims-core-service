@@ -51,7 +51,7 @@ public class PatientDocumentController implements DocumentApi {
         }
     }
 
-    @PreAuthorize("hasAnyRole('FRONT_DESK','MLT','PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('FRONT_DESK','MLT','PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','PATHOLOGIST')")
     @Override
     public PageResponse<DocumentResponse> listDocuments(
             @PathVariable String patientCode,
@@ -68,7 +68,7 @@ public class PatientDocumentController implements DocumentApi {
                 pageResult.isLast());
     }
 
-    @PreAuthorize("hasAnyRole('FRONT_DESK','MLT','PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('FRONT_DESK','MLT','PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','PATHOLOGIST')")
     @Override
     public ResponseEntity<String> downloadDocument(
             @PathVariable String patientCode,

@@ -52,6 +52,7 @@ public class TestResultMapper {
     public TestResultDetailResponse toDetailResponse(
             TestResultEntity entity,
             List<TestResultEntity> caseResults,
+            String patientCode,
             String patientName,
             String testType,
             Integer patientAge,
@@ -73,6 +74,7 @@ public class TestResultMapper {
         return TestResultDetailResponse.builder()
                 .resultId(entity.getId().toString())
                 .status(entity.getStatus() == null ? null : entity.getStatus().name())
+                .patientCode(patientCode)
                 .patientName(patientName)
                 .patientAge(patientAge)
                 .patientGender(patientGender)
@@ -94,7 +96,7 @@ public class TestResultMapper {
     }
 
     public TestResultDetailResponse toDetailResponse(TestResultEntity entity) {
-        return toDetailResponse(entity, List.of(entity), null, null, null, null, List.of());
+        return toDetailResponse(entity, List.of(entity), null, null, null, null, null, List.of());
     }
 
     private TestResultParameterResponse toParameterResponse(TestResultEntity entity) {

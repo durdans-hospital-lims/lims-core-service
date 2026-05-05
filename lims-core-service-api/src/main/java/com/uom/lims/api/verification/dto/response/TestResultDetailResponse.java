@@ -15,6 +15,7 @@ import java.util.List;
 public class TestResultDetailResponse {
     private String resultId;
     private String status;
+    private String patientCode;
     private String patientName;
     private Integer patientAge;
     private String patientGender;
