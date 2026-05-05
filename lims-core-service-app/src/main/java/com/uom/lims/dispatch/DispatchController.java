@@ -87,4 +87,10 @@ public class DispatchController implements DispatchApi {
     public DispatchItemResponse retryAttempt(UUID attemptId) {
         return dispatchService.retryAttempt(attemptId, currentClientIp());
     }
+
+    @Override
+    @PreAuthorize("hasAnyRole('DISPATCH_OFFICER','DISPATCH','SUPER_ADMIN')")
+    public DispatchItemResponse markAttemptDelivered(UUID attemptId) {
+        return dispatchService.markAttemptDelivered(attemptId, currentClientIp());
+    }
 }

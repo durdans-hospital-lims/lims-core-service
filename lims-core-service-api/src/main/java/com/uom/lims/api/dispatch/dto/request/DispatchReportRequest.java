@@ -26,4 +26,16 @@ public class DispatchReportRequest {
 
     @Schema(description = "Override patient phone (E.164 or local digits) for SMS")
     private String overridePhone;
+
+    @Schema(description = "Override WhatsApp number when different from patient phone")
+    private String overrideWhatsappPhone;
+
+    @Schema(description = "Postal address for courier/post delivery")
+    private String postalAddress;
+
+    @Schema(description = "Postal or courier service name")
+    private String postalService;
+
+    @Schema(description = "Externally issued tracking number; generated if omitted for POST")
+    private String trackingNumber;
 }

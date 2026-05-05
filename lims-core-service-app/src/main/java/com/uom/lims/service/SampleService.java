@@ -62,11 +62,12 @@ public class SampleService {
      * the active queue short and action-focused for the phlebotomist.
      *
      * @param pageable pagination parameters from the request
-     * @return paginated page of SampleResponse DTOs in PENDING_COLLECTION status
+     * @return paginated page of SampleResponse DTOs in PENDING_COLLECTION or RECOLLECTION_REQUIRED status
      */
     @Transactional(readOnly = true)
     public Page<SampleResponse> getPendingSamples(Pageable pageable) {
-        return sampleRepository.findAllByStatusAndDeletedFalse(SampleStatus.PENDING_COLLECTION, pageable)
+        return sampleRepository.findAllByStatusInAndDeletedFalse(
+                        List.of(SampleStatus.PENDING_COLLECTION, SampleStatus.RECOLLECTION_REQUIRED), pageable)
                 .map(this::toResponse);
     }
 
@@ -119,20 +120,53 @@ public class SampleService {
     /**
      * WHY: Collection history is a separate view from the active queue — supervisors
      * and quality managers review completed and rejected samples for throughput analysis.
-     * Combining both COLLECTED and REJECTED in history gives a complete audit trail.
+     * Combining COLLECTED, REJECTED, and RECOLLECTION_REQUIRED in history gives a
+     * complete audit trail, including recollection tickets generated after rejection.
      *
      * @param pageable pagination parameters from the request
      * @return paginated page of CollectionHistoryResponse DTOs
      */
     @Transactional(readOnly = true)
     public Page<CollectionHistoryResponse> getCollectionHistory(Pageable pageable) {
-        // WHY: We query COLLECTED first — REJECTED samples are included separately.
-        // Using findAll with status filter and mapping both statuses as history is the
+        // WHY: We query all collection outcomes plus recollection requests.
+        // Using findAll with status filter and mapping these statuses as history is the
         // simplest approach given the current repository contract.
-        Page<SampleEntity> history = sampleRepository
-                .findAllByStatusInAndDeletedFalse(
-                        List.of(SampleStatus.COLLECTED, SampleStatus.REJECTED), pageable);
+        Page<SampleEntity> history = sampleRepository.findHistoryForStatuses(
+                        List.of(
+                                SampleStatus.COLLECTED,
+                                SampleStatus.REJECTED,
+                                SampleStatus.RECOLLECTION_REQUIRED),
+                        pageable);
         return history.map(this::toHistoryResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public SampleResponse getSampleDetail(UUID sampleId) {
+        SampleEntity sample = sampleRepository.findById(sampleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Sample not found with id: " + sampleId));
+        if (sample.isDeleted()) {
+            throw new ResourceNotFoundException("Sample not found with id: " + sampleId);
+        }
+        return toResponse(sample);
+    }
+
+    public SampleResponse recordLabelPrint(UUID sampleId) {
+        SampleEntity sample = sampleRepository.findById(sampleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Sample not found with id: " + sampleId));
+        if (sample.isDeleted()) {
+            throw new ResourceNotFoundException("Sample not found with id: " + sampleId);
+        }
+        if (sample.getStatus() != SampleStatus.COLLECTED) {
+            throw new InvalidStateTransitionException(
+                    "Cannot register specimen label print for sample "
+                            + sample.getBarcode()
+                            + " — only COLLECTED specimens produce bedside labels.");
+        }
+
+        sample.setLabelPrintCount(sample.getLabelPrintCount() + 1);
+        SampleEntity saved = sampleRepository.save(sample);
+        log.info("Specimen label print recorded for {} (count={})", saved.getBarcode(), saved.getLabelPrintCount());
+        return toResponse(saved);
     }
 
     /**
@@ -302,6 +336,7 @@ public class SampleService {
                 .collectedBy(sample.getCollectedBy())
                 .rejectionReason(sample.getRejectionReason())
                 .rejectionNotes(sample.getRejectionNotes())
+                .printCount(sample.getLabelPrintCount())
                 .build();
     }
 
@@ -321,8 +356,16 @@ public class SampleService {
 
         TestCatalogEntity test = testCatalogRepository
                 .findById(sample.getOrderItem().getTestId()).orElse(null);
-        Instant eventTime = sample.getCollectedAt() != null ? sample.getCollectedAt() : sample.getRejectedAt();
-        String eventBy = sample.getCollectedBy() != null ? sample.getCollectedBy() : sample.getRejectedBy();
+        Instant eventTime = sample.getCollectedAt() != null
+                ? sample.getCollectedAt()
+                : sample.getRejectedAt() != null
+                        ? sample.getRejectedAt()
+                        : sample.getCreatedAt();
+        String eventBy = sample.getCollectedBy() != null
+                ? sample.getCollectedBy()
+                : sample.getRejectedBy() != null
+                        ? sample.getRejectedBy()
+                        : sample.getCreatedBy();
         long waitTime = sample.getCreatedAt() != null && eventTime != null
                 ? java.time.temporal.ChronoUnit.MINUTES.between(sample.getCreatedAt(), eventTime)
                 : 0;
@@ -340,6 +383,7 @@ public class SampleService {
                 .collectedBy(eventBy)
                 .waitTime(waitTime)
                 .rejectionNotes(sample.getRejectionNotes())
+                .printCount(sample.getLabelPrintCount())
                 .build();
     }
 

@@ -8,9 +8,18 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.UUID;
+import java.util.Collection;
+import java.util.List;
 
 @Repository
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
+
+        List<AuditLog> findByEntityTypeAndEntityIdOrderByTimestampDesc(String entityType, UUID entityId);
+
+        List<AuditLog> findByEntityTypeAndEntityIdInAndActionInOrderByTimestampAsc(
+                        String entityType,
+                        Collection<UUID> entityIds,
+                        Collection<String> actions);
 
         @Query(value = """
                         SELECT *

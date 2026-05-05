@@ -73,8 +73,11 @@ public class AuditService {
         auditLog.setPatientCode(patientCode);
 
         try {
-            String username = SecurityUtils.getCurrentUsername();
-            auditLog.setPerformedBy(username != null ? username : "SYSTEM");
+            String performer = SecurityUtils.getCurrentDisplayName();
+            if (performer == null || performer.isBlank()) {
+                performer = SecurityUtils.getCurrentUsername();
+            }
+            auditLog.setPerformedBy(performer != null && !performer.isBlank() ? performer : "SYSTEM");
         } catch (Exception e) {
             auditLog.setPerformedBy("SYSTEM");
         }
