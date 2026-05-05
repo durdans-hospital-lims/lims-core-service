@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uom.lims.api.clinical.dto.request.ClinicalAuthRequest;
 import com.uom.lims.api.clinical.dto.request.ReturnToMLTRequest;
 import com.uom.lims.api.dispatch.dto.request.RegisterAuthorizedReportRequest;
+import com.uom.lims.api.dispatch.enums.DeliveryMethod;
 import com.uom.lims.api.enums.ResultFlag;
 import com.uom.lims.api.verification.dto.response.TestResultDetailResponse;
 import com.uom.lims.api.verification.dto.response.PreviousVisitSummaryResponse;
@@ -14,10 +15,10 @@ import com.uom.lims.audit.AuditLogRepository;
 import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.audit.AuditService;
 import com.uom.lims.api.verification.enums.ResultStatus;
+import com.uom.lims.dispatch.DispatchService;
 import com.uom.lims.entity.SampleEntity;
 import com.uom.lims.entity.TestCatalogEntity;
 import com.uom.lims.entity.TestResultEntity;
-import com.uom.lims.event.ClinicalReportAuthorizedEvent;
 import com.uom.lims.exception.InvalidRequestException;
 import com.uom.lims.exception.InvalidStateTransitionException;
 import com.uom.lims.mapper.TestResultMapper;
@@ -29,7 +30,6 @@ import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
@@ -71,7 +71,7 @@ public class ClinicalAuthorizationService {
     private final TestResultMapper testResultMapper;
     private final PatientRepository patientRepository;
     private final BranchRepository branchRepository;
-    private final ApplicationEventPublisher applicationEventPublisher;
+    private final DispatchService dispatchService;
 
     @Transactional(readOnly = true)
     public Page<TestResultSummaryResponse> getPendingResults(int page, int size) {
@@ -125,7 +125,27 @@ public class ClinicalAuthorizationService {
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException(
                             "No test results for clinically pending sample: " + sample.getId()));
-            return testResultMapper.toSummaryResponse(fallback, testName, patientName);
+            TestResultSummaryResponse base = testResultMapper.toSummaryResponse(fallback, testName, patientName);
+            boolean criticalFinding = testResultRepository.findBySampleId(sample.getId()).stream()
+                    .filter(tr -> !tr.isDeleted())
+                    .filter(tr -> !Boolean.TRUE.equals(tr.getDraft()))
+                    .anyMatch(tr -> tr.getFlag() == ResultFlag.CRITICAL_HIGH || tr.getFlag() == ResultFlag.CRITICAL_LOW);
+            return TestResultSummaryResponse.builder()
+                    .resultId(base.getResultId())
+                    .status(base.getStatus())
+                    .patientName(base.getPatientName())
+                    .testType(base.getTestType())
+                    .mltName(base.getMltName())
+                    .qcStatus(base.getQcStatus())
+                    .flag(base.getFlag())
+                    .priorityLevel(sample.getPriority() == null ? null : sample.getPriority().name())
+                    .hasCriticalFinding(criticalFinding)
+                    .createdAt(base.getCreatedAt())
+                    .updatedAt(sample.getLastModifiedAt() != null ? sample.getLastModifiedAt() : base.getUpdatedAt())
+                    .technicianName(base.getTechnicianName())
+                    .pathologistName(base.getPathologistName())
+                    .returnReason(base.getReturnReason())
+                    .build();
         }
 
         TestResultEntity primary = verifiedParams.stream()
@@ -141,6 +161,9 @@ public class ClinicalAuthorizationService {
                 .max(Comparator.comparingInt(this::clinicalFlagSeverity))
                 .orElse(null);
 
+        boolean hasCriticalFinding = verifiedParams.stream()
+                .anyMatch(tr -> tr.getFlag() == ResultFlag.CRITICAL_HIGH || tr.getFlag() == ResultFlag.CRITICAL_LOW);
+
         TestResultSummaryResponse base = testResultMapper.toSummaryResponse(primary, testName, patientName);
         return TestResultSummaryResponse.builder()
                 .resultId(base.getResultId())
@@ -150,6 +173,8 @@ public class ClinicalAuthorizationService {
                 .mltName(base.getMltName())
                 .qcStatus(base.getQcStatus())
                 .flag(worstFlag != null ? worstFlag.name() : base.getFlag())
+                .priorityLevel(sample.getPriority() == null ? null : sample.getPriority().name())
+                .hasCriticalFinding(hasCriticalFinding)
                 .createdAt(base.getCreatedAt())
                 .updatedAt(sample.getLastModifiedAt() != null ? sample.getLastModifiedAt() : base.getUpdatedAt())
                 .technicianName(base.getTechnicianName())
@@ -349,9 +374,14 @@ public class ClinicalAuthorizationService {
                 .authorizedAt(result.getClinicallyAuthorizedAt() == null
                         ? null
                         : OffsetDateTime.ofInstant(result.getClinicallyAuthorizedAt(), ZoneId.systemDefault()))
+                .preferredDeliveryMethods(List.of(
+                        DeliveryMethod.SMS,
+                        DeliveryMethod.WHATSAPP,
+                        DeliveryMethod.EMAIL,
+                        DeliveryMethod.POST))
                 .build();
 
-        applicationEventPublisher.publishEvent(new ClinicalReportAuthorizedEvent(request, "clinical-authorization"));
+        dispatchService.registerAuthorizedReportSystem(request, "clinical-authorization");
     }
 
     private String resolveDispatchBranchCode(PatientEntity patient) {
@@ -384,6 +414,9 @@ public class ClinicalAuthorizationService {
 
         Map<String, String> details = new HashMap<>();
         details.put("testName", catalog == null ? "Unknown Test Group" : catalog.getTestName());
+        if (result.getSample().getPriority() != null) {
+            details.put("specimenPriority", result.getSample().getPriority().name());
+        }
         if (notes != null && !notes.isBlank()) {
             details.put("notes", notes);
         }
@@ -412,6 +445,7 @@ public class ClinicalAuthorizationService {
                 .resultId(auditLog.getEntityId() == null ? "" : auditLog.getEntityId().toString())
                 .actionType(auditLog.getAction())
                 .testName(details.getOrDefault("testName", "Unknown Test Group"))
+                .specimenPriority(details.get("specimenPriority"))
                 .actionSummary(getActionSummary(auditLog.getAction()))
                 .performedBy(auditLog.getPerformedBy())
                 .actionAt(actionAt)

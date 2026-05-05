@@ -19,10 +19,20 @@ public class AuditorAwareImpl implements AuditorAware<String> {
         }
 
         if (authentication instanceof org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken jwtToken) {
-            Object name = jwtToken.getTokenAttributes().get("name");
-            if (name != null) return Optional.of(name.toString());
+            var attrs = jwtToken.getTokenAttributes();
+            Object name = attrs.get("name");
+            if (name != null && !name.toString().isBlank()) {
+                return Optional.of(name.toString());
+            }
 
-            Object username = jwtToken.getTokenAttributes().get("preferred_username");
+            Object given = attrs.get("given_name");
+            Object family = attrs.get("family_name");
+            String combined = ((given != null ? given.toString() : "") + " " + (family != null ? family.toString() : "")).trim();
+            if (!combined.isBlank()) {
+                return Optional.of(combined);
+            }
+
+            Object username = attrs.get("preferred_username");
             if (username != null) return Optional.of(username.toString());
         }
 

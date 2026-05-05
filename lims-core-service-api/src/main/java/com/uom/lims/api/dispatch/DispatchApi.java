@@ -91,4 +91,9 @@ public interface DispatchApi {
     @PostMapping("/attempts/{attemptId}/retry")
     @ResponseStatus(HttpStatus.OK)
     DispatchItemResponse retryAttempt(@PathVariable("attemptId") UUID attemptId);
+
+    @Operation(summary = "Mark a sent delivery attempt as delivered")
+    @PostMapping("/attempts/{attemptId}/mark-delivered")
+    @ResponseStatus(HttpStatus.OK)
+    DispatchItemResponse markAttemptDelivered(@PathVariable("attemptId") UUID attemptId);
 }

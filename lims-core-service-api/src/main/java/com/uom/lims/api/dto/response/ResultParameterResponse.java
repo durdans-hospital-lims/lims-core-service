@@ -10,5 +10,6 @@ public record ResultParameterResponse(
         String unit,
         BigDecimal refLow,
         BigDecimal refHigh,
-        String flag) {
+        String flag,
+        PreviousValueResponse previousValue) {
 }

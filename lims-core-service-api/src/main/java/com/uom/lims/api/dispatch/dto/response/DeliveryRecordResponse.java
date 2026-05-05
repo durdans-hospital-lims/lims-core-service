@@ -25,4 +25,6 @@ public class DeliveryRecordResponse {
     private DispatchItemStatus status;
     private String dispatchedTime;
     private String deliveredTime;
+    private String trackingNumber;
+    private String trackingUrl;
 }

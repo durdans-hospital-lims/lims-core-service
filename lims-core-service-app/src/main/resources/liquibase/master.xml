@@ -19,5 +19,6 @@
     <include file="liquibase/changelog/20260425000000_add_dispatch_base_columns.xml"/>
     <include file="liquibase/changelog/20260503121000_add_payment_notes.xml"/>
     <include file="liquibase/changelog/20260504190000_seed_basic_lab_catalog.xml"/>
-    <include file="liquibase/changelog/20260505183000_add_sample_print_count.xml"/>
+    <include file="liquibase/changelog/20260505100000_add_dispatch_tracking_columns.xml"/>
+    <include file="liquibase/changelog/20260505200000_label_print_and_supplies.xml"/>
 </databaseChangeLog>
