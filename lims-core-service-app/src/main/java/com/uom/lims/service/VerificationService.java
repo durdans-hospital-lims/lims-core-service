@@ -194,10 +194,30 @@ public class VerificationService {
                             "No test results for sample in supervisor queue: " + sample.getId()));
             UUID testId = sample.getOrderItem().getTestId();
             String patientId = sample.getOrderItem().getOrder().getPatientId();
-            return testResultMapper.toSummaryResponse(
+            TestResultSummaryResponse base = testResultMapper.toSummaryResponse(
                     fallback,
                     testNamesById.getOrDefault(testId, "UNKNOWN_TEST"),
                     patientNamesById.getOrDefault(patientId, "UNKNOWN_PATIENT"));
+            boolean criticalFinding = testResultRepository.findBySampleId(sample.getId()).stream()
+                    .filter(tr -> !tr.isDeleted())
+                    .filter(tr -> !Boolean.TRUE.equals(tr.getDraft()))
+                    .anyMatch(tr -> tr.getFlag() == ResultFlag.CRITICAL_HIGH || tr.getFlag() == ResultFlag.CRITICAL_LOW);
+            return TestResultSummaryResponse.builder()
+                    .resultId(base.getResultId())
+                    .status(base.getStatus())
+                    .patientName(base.getPatientName())
+                    .testType(base.getTestType())
+                    .mltName(base.getMltName())
+                    .qcStatus(base.getQcStatus())
+                    .flag(null)
+                    .priorityLevel(sample.getPriority() == null ? null : sample.getPriority().name())
+                    .hasCriticalFinding(criticalFinding)
+                    .createdAt(base.getCreatedAt())
+                    .updatedAt(sample.getLastModifiedAt() != null ? sample.getLastModifiedAt() : base.getUpdatedAt())
+                    .technicianName(base.getTechnicianName())
+                    .pathologistName(base.getPathologistName())
+                    .returnReason(base.getReturnReason())
+                    .build();
         }
 
         TestResultEntity primary = pending.stream()
@@ -207,11 +227,8 @@ public class VerificationService {
                         .thenComparing(tr -> tr.getParameter().getName(), String.CASE_INSENSITIVE_ORDER))
                 .orElse(pending.get(0));
 
-        ResultFlag worstFlag = pending.stream()
-                .map(TestResultEntity::getFlag)
-                .filter(Objects::nonNull)
-                .max(Comparator.comparingInt(this::flagSeverity))
-                .orElse(null);
+        boolean hasCriticalFinding = pending.stream()
+                .anyMatch(tr -> tr.getFlag() == ResultFlag.CRITICAL_HIGH || tr.getFlag() == ResultFlag.CRITICAL_LOW);
 
         String aggregateStatus = pending.stream()
                         .anyMatch(tr -> tr.getStatus() == ResultStatus.RETURNED_FOR_RECHECK)
@@ -231,7 +248,9 @@ public class VerificationService {
                 .testType(base.getTestType())
                 .mltName(base.getMltName())
                 .qcStatus(base.getQcStatus())
-                .flag(worstFlag != null ? worstFlag.name() : base.getFlag())
+                .flag(null)
+                .priorityLevel(sample.getPriority() == null ? null : sample.getPriority().name())
+                .hasCriticalFinding(hasCriticalFinding)
                 .createdAt(base.getCreatedAt())
                 .updatedAt(sample.getLastModifiedAt() != null ? sample.getLastModifiedAt() : base.getUpdatedAt())
                 .technicianName(base.getTechnicianName())
@@ -524,6 +543,7 @@ public class VerificationService {
                 .resultId(auditLog.getEntityId() == null ? "" : auditLog.getEntityId().toString())
                 .actionType(auditLog.getAction())
                 .testName(details.getOrDefault("testName", "Unknown Test Group"))
+                .specimenPriority(details.get("specimenPriority"))
                 .actionSummary(getActionSummary(auditLog.getAction()))
                 .performedBy(auditLog.getPerformedBy())
                 .actionAt(auditLog.getTimestamp() == null ? null : auditLog.getTimestamp().atZone(java.time.ZoneId.systemDefault()).toInstant())
@@ -659,6 +679,9 @@ public class VerificationService {
                 .resultId(primaryResult.getId().toString())
                 .sampleId(primaryResult.getSample().getId().toString())
                 .status(primaryResult.getStatus() == null ? null : primaryResult.getStatus().name())
+                .priorityLevel(primaryResult.getSample().getPriority() == null
+                        ? null
+                        : primaryResult.getSample().getPriority().name())
                 .visitedAt(visitedAt)
                 .parameterCount(sampleResults.size())
                 .abnormalCount(abnormalCount)
@@ -785,6 +808,9 @@ public class VerificationService {
 
         Map<String, String> details = new HashMap<>();
         details.put("testName", catalog == null ? "Unknown Test Group" : catalog.getTestName());
+        if (result.getSample().getPriority() != null) {
+            details.put("specimenPriority", result.getSample().getPriority().name());
+        }
         if (notes != null && !notes.isBlank()) {
             details.put("notes", notes);
         }

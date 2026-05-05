@@ -45,4 +45,13 @@ public class ReportDeliveryAttemptEntity extends BaseEntity {
 
     @Column(name = "delivered_at")
     private LocalDateTime deliveredAt;
+
+    @Column(name = "recipient_contact", length = 1000)
+    private String recipientContact;
+
+    @Column(name = "tracking_number", length = 100)
+    private String trackingNumber;
+
+    @Column(name = "tracking_url", length = 2048)
+    private String trackingUrl;
 }

@@ -32,7 +32,8 @@ public class CollectionHistoryResponse {
     private SampleStatus status;
     private Instant collectedAt;
     private String collectedBy;
-    private Integer printCount;
     private long waitTime;
     private String rejectionNotes;
+    /** Total label prints recorded for this specimen (initial print + reprints). */
+    private int printCount;
 }

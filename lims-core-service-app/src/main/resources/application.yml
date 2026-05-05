@@ -6,9 +6,9 @@ spring:
     name: lims-core-service
 
   datasource:
-    url: jdbc:postgresql://localhost:your_port/durdans_lims_db
-    username: your_username
-    password: your_password
+    url: jdbc:postgresql://localhost:5433/durdans_lims_db
+    username: postgres
+    password: eta8827
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -44,8 +44,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: your gmail
-    password: app password
+    username: kalanasandakelum51@gmail.com
+    password: ttzjwfsuwunfmexb
     protocol: smtp
     properties:
       mail:

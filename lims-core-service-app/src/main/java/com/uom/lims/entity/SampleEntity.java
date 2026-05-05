@@ -59,9 +59,6 @@ public class SampleEntity extends BaseEntity {
     @Column(name = "collected_by")
     private String collectedBy;
 
-    @Column(name = "print_count", nullable = false)
-    private Integer printCount = 0;
-
     @Column(name = "rejected_at")
     private Instant rejectedAt;
 
@@ -74,4 +71,8 @@ public class SampleEntity extends BaseEntity {
 
     @Column(name = "rejection_notes", length = 500)
     private String rejectionNotes;
+
+    /** Incremented when users confirm specimen barcode label print/reprint (audit trail). */
+    @Column(name = "label_print_count", nullable = false)
+    private int labelPrintCount = 0;
 }

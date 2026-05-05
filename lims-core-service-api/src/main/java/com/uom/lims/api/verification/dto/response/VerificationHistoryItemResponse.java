@@ -15,6 +15,8 @@ public class VerificationHistoryItemResponse {
     private String resultId;
     private String actionType;
     private String testName;
+    /** Specimen priority captured at audit time (STAT, URGENT, NORMAL). */
+    private String specimenPriority;
     private String actionSummary;
     private String performedBy;
     private Instant actionAt;
