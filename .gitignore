@@ -37,6 +37,8 @@ out/
 
 # VS Code
 .vscode/
+.cursor/
+.codex-logs/
 
 # Application config / secrets
 # Track only safe base configs. Ignore environment-specific files.
