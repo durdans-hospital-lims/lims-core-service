@@ -1,0 +1,132 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "org.springframework.boot",
+    "module": "spring-boot-starter-cache",
+    "version": "3.5.10",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.14.3"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "org.springframework.boot",
+          "module": "spring-boot-starter",
+          "version": {
+            "requires": "3.5.10"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-context-support",
+          "version": {
+            "requires": "6.2.15"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "spring-boot-starter-cache-3.5.10.jar",
+          "url": "spring-boot-starter-cache-3.5.10.jar",
+          "size": 2019,
+          "sha512": "6228de1761adb4d067a902d6ba2e34351685e071023f0cbd4ef82eeb8b6c050434587af3148d6d8d106fce40180fcb61207b22c29f6e18b05e8991d1e10a76bb",
+          "sha256": "64afb4fde15eda8f7eb6d089bbf8a36d73e086861fa93e4edbc4622af7882f2f",
+          "sha1": "f8fe060fcdf2386f7585bd57a9671cc2b775dbee",
+          "md5": "75257f65bb6d23dc010738ca348ebfc3"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "org.springframework.boot",
+          "module": "spring-boot-starter",
+          "version": {
+            "requires": "3.5.10"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-context-support",
+          "version": {
+            "requires": "6.2.15"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "spring-boot-starter-cache-3.5.10.jar",
+          "url": "spring-boot-starter-cache-3.5.10.jar",
+          "size": 2019,
+          "sha512": "6228de1761adb4d067a902d6ba2e34351685e071023f0cbd4ef82eeb8b6c050434587af3148d6d8d106fce40180fcb61207b22c29f6e18b05e8991d1e10a76bb",
+          "sha256": "64afb4fde15eda8f7eb6d089bbf8a36d73e086861fa93e4edbc4622af7882f2f",
+          "sha1": "f8fe060fcdf2386f7585bd57a9671cc2b775dbee",
+          "md5": "75257f65bb6d23dc010738ca348ebfc3"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "spring-boot-starter-cache-3.5.10-javadoc.jar",
+          "url": "spring-boot-starter-cache-3.5.10-javadoc.jar",
+          "size": 2019,
+          "sha512": "6228de1761adb4d067a902d6ba2e34351685e071023f0cbd4ef82eeb8b6c050434587af3148d6d8d106fce40180fcb61207b22c29f6e18b05e8991d1e10a76bb",
+          "sha256": "64afb4fde15eda8f7eb6d089bbf8a36d73e086861fa93e4edbc4622af7882f2f",
+          "sha1": "f8fe060fcdf2386f7585bd57a9671cc2b775dbee",
+          "md5": "75257f65bb6d23dc010738ca348ebfc3"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "spring-boot-starter-cache-3.5.10-sources.jar",
+          "url": "spring-boot-starter-cache-3.5.10-sources.jar",
+          "size": 2019,
+          "sha512": "6228de1761adb4d067a902d6ba2e34351685e071023f0cbd4ef82eeb8b6c050434587af3148d6d8d106fce40180fcb61207b22c29f6e18b05e8991d1e10a76bb",
+          "sha256": "64afb4fde15eda8f7eb6d089bbf8a36d73e086861fa93e4edbc4622af7882f2f",
+          "sha1": "f8fe060fcdf2386f7585bd57a9671cc2b775dbee",
+          "md5": "75257f65bb6d23dc010738ca348ebfc3"
+        }
+      ]
+    }
+  ]
+}
