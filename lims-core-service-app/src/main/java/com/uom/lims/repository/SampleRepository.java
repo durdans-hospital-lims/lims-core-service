@@ -8,6 +8,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -27,11 +29,14 @@ public interface SampleRepository extends JpaRepository<SampleEntity, UUID>, Jpa
 
     Page<SampleEntity> findAllByStatusAndDeletedFalse(SampleStatus status, Pageable pageable);
 
+    Page<SampleEntity> findAllByStatusInAndDeletedFalse(List<SampleStatus> statuses, Pageable pageable);
+
     Page<SampleEntity> findAllByStatusAndOrderItem_Order_Bill_PaymentStatusAndDeletedFalse(
             SampleStatus status, PaymentStatus paymentStatus, Pageable pageable);
 
-    // WHY: Collection history combines COLLECTED and REJECTED in one query.
-    Page<SampleEntity> findAllByStatusInAndDeletedFalse(List<SampleStatus> statuses, Pageable pageable);
+    @Query("SELECT s FROM SampleEntity s WHERE s.status IN :statuses AND s.deleted = false "
+            + "ORDER BY COALESCE(s.collectedAt, s.rejectedAt, s.createdAt) DESC")
+    Page<SampleEntity> findHistoryForStatuses(@Param("statuses") List<SampleStatus> statuses, Pageable pageable);
 
     long countByStatusAndDeletedFalse(SampleStatus status);
 

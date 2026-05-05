@@ -15,6 +15,8 @@ public class PreviousVisitSummaryResponse {
     private String resultId;
     private String sampleId;
     private String status;
+    /** Specimen priority for that visit (STAT, URGENT, NORMAL). */
+    private String priorityLevel;
     private Instant visitedAt;
     private Integer parameterCount;
     private Integer abnormalCount;

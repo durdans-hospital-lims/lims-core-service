@@ -4,6 +4,7 @@ import com.uom.lims.api.ordering.OrderApi;
 import com.uom.lims.api.dto.request.OrderCreateRequest;
 import com.uom.lims.api.dto.response.ApiResponse;
 import com.uom.lims.api.dto.response.OrderResponse;
+import com.uom.lims.api.dto.response.OrderTrackingResponse;
 import com.uom.lims.api.common.PageResponse;
 import com.uom.lims.service.OrderService;
 import lombok.RequiredArgsConstructor;
@@ -64,6 +65,12 @@ public class OrderController implements OrderApi {
     @PreAuthorize("hasAnyRole('BILLING_OFFICER','PHLEBOTOMIST','FRONT_DESK','BRANCH_ADMIN','SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<OrderResponse>> getOrderById(UUID id) {
         return ResponseEntity.ok(ApiResponse.success(orderService.getOrderById(id)));
+    }
+
+    @Override
+    @PreAuthorize("hasAnyRole('BILLING_OFFICER','PHLEBOTOMIST','FRONT_DESK','BRANCH_ADMIN','SUPER_ADMIN','MLT','LAB_SUPERVISOR','PATHOLOGIST','DISPATCH','DISPATCH_OFFICER','REPORT_DISPATCH')")
+    public ResponseEntity<ApiResponse<OrderTrackingResponse>> getOrderTracking(UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(orderService.getOrderTracking(id)));
     }
 
     @Override

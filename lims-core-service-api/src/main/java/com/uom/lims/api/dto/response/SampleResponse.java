@@ -35,7 +35,7 @@ public class SampleResponse {
     private SamplePatientInfo patient;
     private Instant collectedAt;
     private String collectedBy;
-    private Integer printCount;
     private RejectionReason rejectionReason;
     private String rejectionNotes;
+    private int printCount;
 }

@@ -64,12 +64,6 @@ public class PhlebotomyController implements PhlebotomyApi {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','LAB_RECEPTIONIST','LAB_RECEPTION','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK')")
-    public ResponseEntity<ApiResponse<SampleResponse>> printSampleLabel(UUID sampleId) {
-        return ResponseEntity.ok(ApiResponse.success(sampleService.printSampleLabel(sampleId)));
-    }
-
-    @Override
     @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK')")
     public ResponseEntity<ApiResponse<PageResponse<CollectionHistoryResponse>>> getCollectionHistory(int page, int size) {
         Page<CollectionHistoryResponse> result = sampleService.getCollectionHistory(PageRequest.of(page, size));
@@ -82,5 +76,17 @@ public class PhlebotomyController implements PhlebotomyApi {
                 result.isLast()
         );
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @Override
+    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK','LAB_RECEPTIONIST','LAB_RECEPTION')")
+    public ResponseEntity<ApiResponse<SampleResponse>> getSampleDetail(UUID sampleId) {
+        return ResponseEntity.ok(ApiResponse.success(sampleService.getSampleDetail(sampleId)));
+    }
+
+    @Override
+    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK','LAB_RECEPTIONIST','LAB_RECEPTION')")
+    public ResponseEntity<ApiResponse<SampleResponse>> recordLabelPrint(UUID sampleId) {
+        return ResponseEntity.ok(ApiResponse.success(sampleService.recordLabelPrint(sampleId)));
     }
 }
