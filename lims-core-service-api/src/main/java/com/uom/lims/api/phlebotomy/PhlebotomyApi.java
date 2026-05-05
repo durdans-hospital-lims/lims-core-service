@@ -47,6 +47,11 @@ public interface PhlebotomyApi {
     @ResponseStatus(HttpStatus.OK)
     ResponseEntity<ApiResponse<SampleResponse>> rejectSample(@PathVariable("sampleId") UUID sampleId, @Valid @RequestBody SampleRejectRequest request);
 
+    @Operation(summary = "Record specimen label print", description = "Increments the sample label print count before opening the print dialog")
+    @PostMapping("/samples/{sampleId}/print-label")
+    @ResponseStatus(HttpStatus.OK)
+    ResponseEntity<ApiResponse<SampleResponse>> printSampleLabel(@PathVariable("sampleId") UUID sampleId);
+
     @Operation(summary = "Get collection history", description = "Retrieves a history of all collected and rejected specimens")
     @GetMapping("/collection-history")
     @ResponseStatus(HttpStatus.OK)

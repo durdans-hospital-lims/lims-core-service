@@ -32,6 +32,7 @@ public class CollectionHistoryResponse {
     private SampleStatus status;
     private Instant collectedAt;
     private String collectedBy;
+    private Integer printCount;
     private long waitTime;
     private String rejectionNotes;
 }

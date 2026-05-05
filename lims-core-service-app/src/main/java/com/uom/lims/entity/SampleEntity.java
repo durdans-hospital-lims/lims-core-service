@@ -59,6 +59,9 @@ public class SampleEntity extends BaseEntity {
     @Column(name = "collected_by")
     private String collectedBy;
 
+    @Column(name = "print_count", nullable = false)
+    private Integer printCount = 0;
+
     @Column(name = "rejected_at")
     private Instant rejectedAt;
 
