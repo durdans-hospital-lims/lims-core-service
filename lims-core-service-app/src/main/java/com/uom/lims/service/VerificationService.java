@@ -344,6 +344,7 @@ public class VerificationService {
         return testResultMapper.toDetailResponse(
                 result,
                 caseResults,
+                patientId,
                 patientName,
                 testType,
                 patientAge,

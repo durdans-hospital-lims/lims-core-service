@@ -358,10 +358,7 @@ public class MltTestingService {
 
         @Transactional(readOnly = true)
         public List<MltAllWorklistItemResponse> getAllWorklist() {
-                List<SampleEntity> samples = sampleRepository.findByStatusInAndDeletedFalseOrderByCollectedAtAsc(List.of(
-                                SampleStatus.ACCEPTED,
-                                SampleStatus.IN_TESTING,
-                                SampleStatus.SENT_FOR_VERIFICATION));
+                List<SampleEntity> samples = sampleRepository.findAllMltWorklistSamples();
 
                 List<UUID> testIds = samples.stream()
                                 .map(sample -> sample.getOrderItem().getTestId())
