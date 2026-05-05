@@ -3,6 +3,7 @@ package com.uom.lims.api.ordering;
 import com.uom.lims.api.dto.request.OrderCreateRequest;
 import com.uom.lims.api.dto.response.ApiResponse;
 import com.uom.lims.api.dto.response.OrderResponse;
+import com.uom.lims.api.dto.response.OrderTrackingResponse;
 import com.uom.lims.api.common.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -46,6 +47,11 @@ public interface OrderApi {
     @GetMapping("/{id}")
     @ResponseStatus(HttpStatus.OK)
     ResponseEntity<ApiResponse<OrderResponse>> getOrderById(@PathVariable("id") UUID id);
+
+    @Operation(summary = "Get order tracking timeline", description = "Retrieves the clinical workflow and report delivery tracking events for an order")
+    @GetMapping("/{id}/tracking")
+    @ResponseStatus(HttpStatus.OK)
+    ResponseEntity<ApiResponse<OrderTrackingResponse>> getOrderTracking(@PathVariable("id") UUID id);
 
     @Operation(summary = "Cancel an order", description = "Transitions a PENDING order to CANCELLED status")
     @ApiResponses(value = {

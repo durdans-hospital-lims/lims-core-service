@@ -107,16 +107,28 @@ public class StatisticsService {
      */
     public PhlebotomyStatsResponse getPhlebotomyStats() {
         Instant[] todayBounds = todayBounds();
+        List<SampleStatus> actionableStatuses = List.of(
+                SampleStatus.PENDING_COLLECTION,
+                SampleStatus.RECOLLECTION_REQUIRED);
 
-        long pendingCollections = sampleRepository.countByStatusAndOrderItem_Order_Bill_PaymentStatusAndDeletedFalse(
-                SampleStatus.PENDING_COLLECTION, PaymentStatus.PAID);
+        long pendingCollections = sampleRepository
+                .findAllByStatusInAndDeletedFalse(actionableStatuses, Pageable.unpaged())
+                .getContent().stream()
+                .filter(s -> s.getOrderItem() != null
+                        && s.getOrderItem().getOrder() != null
+                        && s.getOrderItem().getOrder().getBill() != null
+                        && s.getOrderItem().getOrder().getBill().getPaymentStatus() == PaymentStatus.PAID)
+                .count();
 
         // WHY: STAT and URGENT samples are counted together because both require
         // expedited processing — only NORMAL samples can be queued in standard order.
         long urgentSamples = sampleRepository
-                .findAllByStatusAndOrderItem_Order_Bill_PaymentStatusAndDeletedFalse(
-                        SampleStatus.PENDING_COLLECTION, PaymentStatus.PAID, Pageable.unpaged())
+                .findAllByStatusInAndDeletedFalse(actionableStatuses, Pageable.unpaged())
                 .getContent().stream()
+                .filter(s -> s.getOrderItem() != null
+                        && s.getOrderItem().getOrder() != null
+                        && s.getOrderItem().getOrder().getBill() != null
+                        && s.getOrderItem().getOrder().getBill().getPaymentStatus() == PaymentStatus.PAID)
                 .filter(s -> s.getPriority() == Priority.STAT || s.getPriority() == Priority.URGENT)
                 .count();
 

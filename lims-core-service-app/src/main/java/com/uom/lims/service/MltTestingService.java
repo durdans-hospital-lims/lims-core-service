@@ -6,11 +6,14 @@ import com.uom.lims.api.dto.request.ResultItemRequest;
 import com.uom.lims.api.dto.request.SampleRejectRequest;
 import com.uom.lims.api.dto.response.MltAllWorklistItemResponse;
 import com.uom.lims.api.dto.request.SubmitResultsRequest;
+import com.uom.lims.api.dto.response.MltResultActivityItemResponse;
 import com.uom.lims.api.dto.response.MltWorklistItemResponse;
+import com.uom.lims.api.dto.response.PreviousValueResponse;
 import com.uom.lims.api.dto.response.ResultParameterResponse;
 import com.uom.lims.api.dto.response.SampleResultsResponse;
 import com.uom.lims.api.enums.ResultFlag;
 import com.uom.lims.api.enums.SampleStatus;
+import com.uom.lims.audit.AuditLogRepository;
 import com.uom.lims.audit.AuditService;
 import com.uom.lims.api.verification.enums.ResultStatus;
 import com.uom.lims.entity.SampleEntity;
@@ -32,6 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -46,6 +51,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MltTestingService {
 
+        private static final String MLT_ENTITY_TYPE = "MLT_RESULT_ENTRY";
+        private static final String ACTION_DRAFT = "MLT_RESULTS_DRAFT_SAVED";
+        private static final String ACTION_SUBMIT = "MLT_RESULTS_SUBMITTED";
+
+        private static final EnumSet<ResultStatus> PREVIOUS_VALUE_STATUSES = EnumSet.of(
+                        ResultStatus.CLINICALLY_AUTHORIZED,
+                        ResultStatus.TECHNICALLY_VERIFIED,
+                        ResultStatus.DISPATCHED);
+
         private final SampleRepository sampleRepository;
         private final TestParameterRepository parameterRepository;
         private final TestResultRepository resultRepository;
@@ -53,6 +67,7 @@ public class MltTestingService {
         private final PatientRepository patientRepository;
         private final SecurityUtils securityUtils;
         private final AuditService auditService;
+        private final AuditLogRepository auditLogRepository;
         private final ObjectMapper objectMapper;
 
         @Transactional(readOnly = true)
@@ -77,10 +92,21 @@ public class MltTestingService {
                                                 Function.identity(),
                                                 (existing, replacement) -> replacement));
 
+                String patientCode = sample.getOrderItem().getOrder().getPatientId();
+                Instant visitAt = sample.getCollectedAt() != null ? sample.getCollectedAt()
+                                : sample.getCreatedAt();
+                Map<UUID, TestResultEntity> previousByParameterId = resolvePreviousAuthorizedResults(
+                                patientCode,
+                                sample.getOrderItem().getTestId(),
+                                sample.getId(),
+                                visitAt);
+
                 List<ResultParameterResponse> resultResponses = parameters.stream()
                                 .map(param -> {
 
                                         TestResultEntity result = resultsByParameterId.get(param.getId());
+                                        PreviousValueResponse previousValue = toPreviousValueResponse(
+                                                        previousByParameterId.get(param.getId()));
 
                                         return new ResultParameterResponse(
                                                         param.getId(),
@@ -90,7 +116,8 @@ public class MltTestingService {
                                                         param.getRefLow(),
                                                         param.getRefHigh(),
                                                         result != null && result.getFlag() != null ? result.getFlag().name()
-                                                                        : null);
+                                                                        : null,
+                                                        previousValue);
                                 })
                                 .toList();
                 String mltNotes = resultsByParameterId.values().stream()
@@ -103,12 +130,34 @@ public class MltTestingService {
                                 sample.getId(),
                                 sample.getBarcode(),
                                 sample.getOrderItem().getOrder().getId(),
+                                sample.getOrderItem().getOrder().getOrderNo(),
                                 sample.getOrderItem().getId(),
+                                patientCode,
                                 patientName,
                                 testCatalog.getTestName(),
                                 sample.getStatus().name(),
+                                sample.getTubeType().name(),
+                                sample.getPriority().name(),
+                                sample.getCollectedAt(),
+                                sample.getCollectedBy(),
                                 resultResponses,
                                 mltNotes);
+        }
+
+        @Transactional(readOnly = true)
+        public List<MltResultActivityItemResponse> getSampleResultActivity(UUID sampleId) {
+                sampleRepository.findById(sampleId)
+                                .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
+
+                return auditLogRepository.findByEntityTypeAndEntityIdOrderByTimestampDesc(MLT_ENTITY_TYPE, sampleId)
+                                .stream()
+                                .map(log -> new MltResultActivityItemResponse(
+                                                log.getId(),
+                                                log.getAction(),
+                                                log.getPerformedBy(),
+                                                log.getTimestamp(),
+                                                log.getDetails()))
+                                .toList();
         }
 
         @Transactional
@@ -149,6 +198,9 @@ public class MltTestingService {
                         validateFinalSubmissionCompleteness(request, testParameters);
                 }
 
+                Map<UUID, String> parameterNames = testParameters.stream()
+                                .collect(Collectors.toMap(TestParameterEntity::getId, TestParameterEntity::getName));
+
                 for (ResultItemRequest item : request.results()) {
 
                         TestParameterEntity parameter = parameterRepository.findById(item.parameterId())
@@ -181,6 +233,86 @@ public class MltTestingService {
                 if (!isDraft) {
                         sample.setStatus(SampleStatus.SENT_FOR_VERIFICATION);
                         sampleRepository.save(sample);
+                }
+
+                if (!request.results().isEmpty()) {
+                        auditService.log(
+                                        isDraft ? ACTION_DRAFT : ACTION_SUBMIT,
+                                        MLT_ENTITY_TYPE,
+                                        sample.getId(),
+                                        sample.getOrderItem().getOrder().getPatientId(),
+                                        buildMltResultAuditPayload(sample, request, isDraft, parameterNames),
+                                        null);
+                }
+        }
+
+        private Map<UUID, TestResultEntity> resolvePreviousAuthorizedResults(
+                        String patientId,
+                        UUID testId,
+                        UUID sampleId,
+                        Instant currentVisitAt) {
+
+                List<TestResultEntity> rows = resultRepository.findPreviousResultsForPatientAndTest(
+                                patientId,
+                                testId,
+                                sampleId,
+                                currentVisitAt);
+
+                Map<UUID, TestResultEntity> pickFirst = new LinkedHashMap<>();
+                for (TestResultEntity row : rows) {
+                        if (row.getStatus() == null || !PREVIOUS_VALUE_STATUSES.contains(row.getStatus())) {
+                                continue;
+                        }
+                        UUID parameterId = row.getParameter().getId();
+                        pickFirst.putIfAbsent(parameterId, row);
+                }
+                return pickFirst;
+        }
+
+        private PreviousValueResponse toPreviousValueResponse(TestResultEntity entity) {
+                if (entity == null) {
+                        return null;
+                }
+
+                SampleEntity priorSample = entity.getSample();
+                Instant at = priorSample.getCollectedAt() != null ? priorSample.getCollectedAt()
+                                : priorSample.getCreatedAt();
+                String flag = entity.getFlag() != null ? entity.getFlag().name() : null;
+
+                return new PreviousValueResponse(entity.getResultValue(), flag, at, priorSample.getBarcode());
+        }
+
+        private String buildMltResultAuditPayload(
+                        SampleEntity sample,
+                        SubmitResultsRequest request,
+                        boolean isDraft,
+                        Map<UUID, String> parameterNames) {
+
+                String testName = testCatalogRepository.findById(sample.getOrderItem().getTestId())
+                                .map(TestCatalogEntity::getTestName)
+                                .orElse("UNKNOWN_TEST");
+
+                List<Map<String, Object>> parameterRows = new ArrayList<>();
+                for (ResultItemRequest item : request.results()) {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("parameterName", parameterNames.getOrDefault(item.parameterId(),
+                                        item.parameterId().toString()));
+                        row.put("value", item.result());
+                        row.put("submittedFlag", item.flag());
+                        parameterRows.add(row);
+                }
+
+                Map<String, Object> root = new LinkedHashMap<>();
+                root.put("barcode", sample.getBarcode());
+                root.put("testName", testName);
+                root.put("draft", isDraft);
+                root.put("mltNotes", request.mltNotes());
+                root.put("parameters", parameterRows);
+
+                try {
+                        return objectMapper.writeValueAsString(root);
+                } catch (JsonProcessingException exception) {
+                        throw new BusinessRuleException("Could not create MLT audit payload");
                 }
         }
 
@@ -374,6 +506,9 @@ public class MltTestingService {
                 details.put("priority", sample.getPriority().name());
                 details.put("status", status.name());
                 details.put("notes", notes);
+                if (sample.getRejectionReason() != null) {
+                        details.put("rejectionReason", sample.getRejectionReason().name());
+                }
 
                 try {
                         return objectMapper.writeValueAsString(details);

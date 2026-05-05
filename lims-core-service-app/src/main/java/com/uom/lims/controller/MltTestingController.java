@@ -2,6 +2,7 @@ package com.uom.lims.controller;
 
 import com.uom.lims.api.dto.response.MltWorklistItemResponse;
 import com.uom.lims.api.dto.response.MltAllWorklistItemResponse;
+import com.uom.lims.api.dto.response.MltResultActivityItemResponse;
 import java.util.List;
 import com.uom.lims.api.dto.request.SubmitResultsRequest;
 import jakarta.validation.Valid;
@@ -41,6 +42,11 @@ public class MltTestingController {
     @GetMapping("/samples/{id}/results")
     public ResponseEntity<SampleResultsResponse> getSampleResults(@PathVariable UUID id) {
         return ResponseEntity.ok(mltTestingService.getSampleResults(id));
+    }
+
+    @GetMapping("/samples/{id}/result-activity")
+    public ResponseEntity<List<MltResultActivityItemResponse>> getSampleResultActivity(@PathVariable UUID id) {
+        return ResponseEntity.ok(mltTestingService.getSampleResultActivity(id));
     }
 
     @GetMapping("/worklist")

@@ -77,4 +77,16 @@ public class PhlebotomyController implements PhlebotomyApi {
         );
         return ResponseEntity.ok(ApiResponse.success(response));
     }
+
+    @Override
+    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK','LAB_RECEPTIONIST','LAB_RECEPTION')")
+    public ResponseEntity<ApiResponse<SampleResponse>> getSampleDetail(UUID sampleId) {
+        return ResponseEntity.ok(ApiResponse.success(sampleService.getSampleDetail(sampleId)));
+    }
+
+    @Override
+    @PreAuthorize("hasAnyRole('PHLEBOTOMIST','BRANCH_ADMIN','SUPER_ADMIN','FRONT_DESK','LAB_RECEPTIONIST','LAB_RECEPTION')")
+    public ResponseEntity<ApiResponse<SampleResponse>> recordLabelPrint(UUID sampleId) {
+        return ResponseEntity.ok(ApiResponse.success(sampleService.recordLabelPrint(sampleId)));
+    }
 }

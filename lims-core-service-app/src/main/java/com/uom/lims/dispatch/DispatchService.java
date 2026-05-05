@@ -13,10 +13,20 @@ import com.uom.lims.api.dispatch.dto.response.FailedDeliveryResponse;
 import com.uom.lims.api.dispatch.enums.DeliveryAttemptStatus;
 import com.uom.lims.api.dispatch.enums.DeliveryMethod;
 import com.uom.lims.api.dispatch.enums.DispatchItemStatus;
+import com.uom.lims.api.enums.OrderStatus;
+import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.audit.AuditService;
+import com.uom.lims.entity.OrderEntity;
+import com.uom.lims.entity.OrderItemEntity;
+import com.uom.lims.entity.SampleEntity;
+import com.uom.lims.entity.TestResultEntity;
 import com.uom.lims.event.ReportDispatchDomainEvent;
 import com.uom.lims.exception.InvalidRequestException;
 import com.uom.lims.exception.ResourceNotFoundException;
+import com.uom.lims.repository.OrderItemRepository;
+import com.uom.lims.repository.OrderRepository;
+import com.uom.lims.repository.SampleRepository;
+import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.security.SecurityUtils;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
@@ -56,6 +66,11 @@ public class DispatchService {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.UK);
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("h:mm a", Locale.UK);
     private static final DateTimeFormatter RECORD_TS = DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.UK);
+    private static final List<DeliveryMethod> DEFAULT_DELIVERY_METHODS = List.of(
+            DeliveryMethod.SMS,
+            DeliveryMethod.WHATSAPP,
+            DeliveryMethod.EMAIL,
+            DeliveryMethod.POST);
 
     private final ReportDispatchItemRepository itemRepository;
     private final ReportDeliveryAttemptRepository attemptRepository;
@@ -63,6 +78,10 @@ public class DispatchService {
     private final AuditService auditService;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final ObjectMapper objectMapper;
+    private final TestResultRepository testResultRepository;
+    private final SampleRepository sampleRepository;
+    private final OrderItemRepository orderItemRepository;
+    private final OrderRepository orderRepository;
 
     @Transactional
     public DispatchItemResponse registerAuthorizedReport(RegisterAuthorizedReportRequest request, String ipAddress) {
@@ -102,12 +121,14 @@ public class DispatchService {
         if (existing.isEmpty()) {
             entity.setOverallStatus(DispatchItemStatus.PENDING);
         }
-        if (request.getPreferredDeliveryMethods() != null && !request.getPreferredDeliveryMethods().isEmpty()) {
-            try {
-                entity.setPreferredMethodsJson(objectMapper.writeValueAsString(request.getPreferredDeliveryMethods()));
-            } catch (Exception e) {
-                throw new InvalidRequestException("Could not serialize preferred delivery methods");
-            }
+        List<DeliveryMethod> preferredMethods = request.getPreferredDeliveryMethods() != null
+                && !request.getPreferredDeliveryMethods().isEmpty()
+                ? request.getPreferredDeliveryMethods()
+                : DEFAULT_DELIVERY_METHODS;
+        try {
+            entity.setPreferredMethodsJson(objectMapper.writeValueAsString(preferredMethods));
+        } catch (Exception e) {
+            throw new InvalidRequestException("Could not serialize preferred delivery methods");
         }
 
         ReportDispatchItemEntity saved = itemRepository.save(entity);
@@ -214,6 +235,7 @@ public class DispatchService {
 
         item.setOverallStatus(aggregateStatusFromAttempts(item.getAttempts()));
         ReportDispatchItemEntity saved = itemRepository.save(item);
+        updateLinkedOrderIfDelivered(saved);
 
         auditService.log(
                 "DISPATCH_REPORT",
@@ -252,11 +274,14 @@ public class DispatchService {
 
         DispatchReportRequest minimal = DispatchReportRequest.builder()
                 .methods(List.of(attempt.getMethod()))
+                .postalAddress(attempt.getRecipientContact())
+                .trackingNumber(attempt.getTrackingNumber())
                 .build();
         channelService.executeChannel(item, attempt, minimal);
 
         item.setOverallStatus(aggregateStatusFromAttempts(item.getAttempts()));
         ReportDispatchItemEntity saved = itemRepository.save(item);
+        updateLinkedOrderIfDelivered(saved);
 
         auditService.log(
                 "DISPATCH_RETRY",
@@ -276,6 +301,109 @@ public class DispatchService {
         return mapToDetailResponse(saved);
     }
 
+    @Transactional
+    public DispatchItemResponse markAttemptDelivered(UUID attemptId, String ipAddress) {
+        ReportDeliveryAttemptEntity attempt = attemptRepository.findByIdWithItem(attemptId)
+                .orElseThrow(() -> new ResourceNotFoundException("Delivery attempt not found"));
+
+        ReportDispatchItemEntity item = attempt.getDispatchItem();
+        assertBranchAccess(item.getBranchCode());
+
+        if (attempt.getStatus() == DeliveryAttemptStatus.DELIVERED) {
+            updateLinkedOrderIfDelivered(item);
+            return mapToDetailResponse(item);
+        }
+        if (attempt.getStatus() == DeliveryAttemptStatus.FAILED) {
+            throw new InvalidRequestException("Retry failed attempts before marking them delivered");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (attempt.getDispatchedAt() == null) {
+            attempt.setDispatchedAt(now);
+        }
+        attempt.setStatus(DeliveryAttemptStatus.DELIVERED);
+        attempt.setDeliveredAt(now);
+        attempt.setFailureReason(null);
+
+        item.setOverallStatus(aggregateStatusFromAttempts(item.getAttempts()));
+        ReportDispatchItemEntity saved = itemRepository.save(item);
+        updateLinkedOrderIfDelivered(saved);
+
+        auditService.log(
+                "DISPATCH_MARK_DELIVERED",
+                "REPORT_DISPATCH",
+                saved.getId(),
+                saved.getReportReference(),
+                "{\"attemptId\":\"" + attemptId + "\"}",
+                ipAddress);
+
+        applicationEventPublisher.publishEvent(new ReportDispatchDomainEvent(
+                "DISPATCH_MARK_DELIVERED",
+                saved.getReportReference(),
+                saved.getBranchCode(),
+                saved.getOverallStatus().name(),
+                LocalDateTime.now()));
+
+        return mapToDetailResponse(saved);
+    }
+
+    private void updateLinkedOrderIfDelivered(ReportDispatchItemEntity item) {
+        if (item.getOverallStatus() != DispatchItemStatus.DELIVERED) {
+            return;
+        }
+
+        UUID resultId;
+        try {
+            resultId = UUID.fromString(item.getReportReference());
+        } catch (IllegalArgumentException ignored) {
+            return;
+        }
+
+        Optional<TestResultEntity> result = testResultRepository.findById(resultId);
+        if (result.isEmpty()) {
+            return;
+        }
+
+        SampleEntity sample = result.get().getSample();
+        if (sample == null || sample.getOrderItem() == null || sample.getOrderItem().getOrder() == null) {
+            return;
+        }
+
+        OrderItemEntity orderItem = sample.getOrderItem();
+        OrderEntity order = orderItem.getOrder();
+
+        if (sample.getStatus() != SampleStatus.DISPATCHED) {
+            sample.setStatus(SampleStatus.DISPATCHED);
+            sampleRepository.save(sample);
+        }
+        if (orderItem.getStatus() != SampleStatus.DISPATCHED) {
+            orderItem.setStatus(SampleStatus.DISPATCHED);
+            orderItemRepository.save(orderItem);
+        }
+
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return;
+        }
+
+        boolean allItemsDispatched = order.getItems().stream()
+                .filter(itemRow -> !itemRow.isDeleted())
+                .allMatch(this::hasDispatchedActiveSample);
+
+        if (allItemsDispatched && order.getStatus() != OrderStatus.COMPLETED) {
+            order.setStatus(OrderStatus.COMPLETED);
+            orderRepository.save(order);
+        }
+    }
+
+    private boolean hasDispatchedActiveSample(OrderItemEntity orderItem) {
+        return orderItem.getSamples().stream()
+                .filter(sample -> !sample.isDeleted())
+                .filter(sample -> sample.getStatus() != SampleStatus.REJECTED)
+                .max(Comparator.comparing(SampleEntity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(sample -> sample.getStatus() == SampleStatus.DISPATCHED)
+                .orElse(false);
+    }
+
     private void assertRegisterBranchAllowed(String branch) {
         if (isSuperAdmin()) {
             return;
@@ -290,7 +418,7 @@ public class DispatchService {
     }
 
     private void assertBranchAccess(String itemBranch) {
-        if (isSuperAdmin()) {
+        if (isSuperAdmin() || isDispatchRole()) {
             return;
         }
         String mine = SecurityUtils.getCurrentBranchId();
@@ -300,11 +428,12 @@ public class DispatchService {
     }
 
     private ReportDispatchItemEntity loadItemForCurrentUser(String reportReference, String branchCodeParam) {
-        if (isSuperAdmin()) {
-            if (branchCodeParam == null || branchCodeParam.isBlank()) {
-                throw new InvalidRequestException("branchCode query parameter is required for super administrators");
+        if (isSuperAdmin() || isDispatchRole()) {
+            if (branchCodeParam != null && !branchCodeParam.isBlank()) {
+                return itemRepository.findByReportReferenceAndBranchCode(reportReference, branchCodeParam.trim().toUpperCase())
+                        .orElseThrow(() -> new ResourceNotFoundException("Dispatch item not found"));
             }
-            return itemRepository.findByReportReferenceAndBranchCode(reportReference, branchCodeParam.trim().toUpperCase())
+            return itemRepository.findFirstByReportReferenceOrderByAuthorizedAtDesc(reportReference)
                     .orElseThrow(() -> new ResourceNotFoundException("Dispatch item not found"));
         }
         String branch = SecurityUtils.getCurrentBranchId();
@@ -324,7 +453,7 @@ public class DispatchService {
      * Empty = no branch filter (all branches, super admin only).
      */
     private Optional<String> resolveBranchFilterForQuery(String branchCodeParam) {
-        if (isSuperAdmin()) {
+        if (isSuperAdmin() || isDispatchRole()) {
             if (branchCodeParam != null && !branchCodeParam.isBlank()) {
                 return Optional.of(branchCodeParam.trim().toUpperCase());
             }
@@ -335,6 +464,17 @@ public class DispatchService {
             throw new InvalidRequestException("Missing branch in security context");
         }
         return Optional.of(mine.toUpperCase());
+    }
+
+    private boolean isDispatchRole() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return false;
+        }
+        return auth.getAuthorities().stream().anyMatch(a ->
+                "ROLE_DISPATCH".equals(a.getAuthority())
+                        || "ROLE_DISPATCH_OFFICER".equals(a.getAuthority())
+                        || "ROLE_REPORT_DISPATCH".equals(a.getAuthority()));
     }
 
     private boolean isSuperAdmin() {
@@ -451,6 +591,10 @@ public class DispatchService {
         String deliveredDisplay = (rowStatus == DispatchItemStatus.DELIVERED && maxDel != null)
                 ? maxDel.atZone(DISPLAY_ZONE).format(RECORD_TS)
                 : null;
+        ReportDeliveryAttemptEntity trackedAttempt = attempts.stream()
+                .filter(a -> a.getTrackingNumber() != null && !a.getTrackingNumber().isBlank())
+                .reduce((first, second) -> second)
+                .orElse(null);
 
         return DeliveryRecordResponse.builder()
                 .reportId(item.getReportReference())
@@ -460,6 +604,8 @@ public class DispatchService {
                 .status(rowStatus)
                 .dispatchedTime(minDisp != null ? minDisp.atZone(DISPLAY_ZONE).format(RECORD_TS) : "—")
                 .deliveredTime(deliveredDisplay)
+                .trackingNumber(trackedAttempt != null ? trackedAttempt.getTrackingNumber() : null)
+                .trackingUrl(trackedAttempt != null ? trackedAttempt.getTrackingUrl() : null)
                 .build();
     }
 
@@ -505,19 +651,23 @@ public class DispatchService {
                 .retryCount(a.getRetryCount())
                 .dispatchedAt(a.getDispatchedAt() != null ? a.getDispatchedAt().atZone(DISPLAY_ZONE).toOffsetDateTime() : null)
                 .deliveredAt(a.getDeliveredAt() != null ? a.getDeliveredAt().atZone(DISPLAY_ZONE).toOffsetDateTime() : null)
+                .recipientContact(a.getRecipientContact())
+                .trackingNumber(a.getTrackingNumber())
+                .trackingUrl(a.getTrackingUrl())
                 .build();
     }
 
     private List<DeliveryMethod> parsePreferredMethods(ReportDispatchItemEntity e) {
         if (e.getPreferredMethodsJson() == null || e.getPreferredMethodsJson().isBlank()) {
-            return List.of();
+            return DEFAULT_DELIVERY_METHODS;
         }
         try {
-            return objectMapper.readValue(e.getPreferredMethodsJson(), new TypeReference<>() {
+            List<DeliveryMethod> methods = objectMapper.readValue(e.getPreferredMethodsJson(), new TypeReference<>() {
             });
+            return methods == null || methods.isEmpty() ? DEFAULT_DELIVERY_METHODS : methods;
         } catch (Exception ex) {
             log.warn("Invalid preferred_methods JSON for {}", e.getReportReference());
-            return List.of();
+            return DEFAULT_DELIVERY_METHODS;
         }
     }
 

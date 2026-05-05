@@ -24,4 +24,7 @@ public class DeliveryAttemptResponse {
     private int retryCount;
     private OffsetDateTime dispatchedAt;
     private OffsetDateTime deliveredAt;
+    private String recipientContact;
+    private String trackingNumber;
+    private String trackingUrl;
 }

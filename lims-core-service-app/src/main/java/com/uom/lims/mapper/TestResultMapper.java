@@ -77,7 +77,7 @@ public class TestResultMapper {
                 .patientAge(patientAge)
                 .patientGender(patientGender)
                 .testType(testType)
-                .priority(resolvePriority(entity, caseResults))
+                .priority(resolvePriority(entity))
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getLastModifiedAt())
                 .mltName(entity.getCreatedBy())
@@ -122,20 +122,11 @@ public class TestResultMapper {
         }
     }
 
-    private String resolvePriority(TestResultEntity entity, List<TestResultEntity> caseResults) {
-        if (caseResults.stream().anyMatch(result -> result.getFlag() == ResultFlag.CRITICAL_HIGH)) {
-            return ResultFlag.CRITICAL_HIGH.name();
-        }
-        if (caseResults.stream().anyMatch(result -> result.getFlag() == ResultFlag.CRITICAL_LOW)) {
-            return ResultFlag.CRITICAL_LOW.name();
-        }
-        if (caseResults.stream().anyMatch(result -> result.getFlag() == ResultFlag.HIGH)) {
-            return ResultFlag.HIGH.name();
-        }
-        if (caseResults.stream().anyMatch(result -> result.getFlag() == ResultFlag.LOW)) {
-            return ResultFlag.LOW.name();
-        }
-
+    /**
+     * Worklist priority follows specimen / order triage (STAT &gt; URGENT &gt; NORMAL).
+     * Panic flags remain visible per-analyte in the results grid — not as a single collapsed “priority”.
+     */
+    private String resolvePriority(TestResultEntity entity) {
         return entity.getSample().getPriority() == null ? null : entity.getSample().getPriority().name();
     }
 
