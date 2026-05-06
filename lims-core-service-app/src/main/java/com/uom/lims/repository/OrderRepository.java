@@ -22,5 +22,7 @@ public interface OrderRepository extends JpaRepository<OrderEntity, UUID>, JpaSp
     Optional<OrderEntity> findByIdAndDeletedFalse(UUID id);
     Page<OrderEntity> findAllByDeletedFalse(Pageable pageable);
     boolean existsByPatientIdAndStatusInAndDeletedFalse(String patientId, List<OrderStatus> statuses);
+    List<OrderEntity> findAllByPatientIdAndStatusInAndDeletedFalse(String patientId, List<OrderStatus> statuses);
+    Page<OrderEntity> findAllByPatientIdAndDeletedFalse(String patientId, Pageable pageable);
     long countByCreatedAtBetweenAndDeletedFalse(Instant start, Instant end);
 }

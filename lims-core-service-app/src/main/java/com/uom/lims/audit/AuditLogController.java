@@ -1,6 +1,11 @@
 package com.uom.lims.audit;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uom.lims.api.common.PageResponse;
+import com.uom.lims.patient.PatientEntity;
+import com.uom.lims.patient.PatientRepository;
+import com.uom.lims.security.ClientIpResolver;
 import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,9 +17,12 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -24,8 +32,15 @@ import java.util.stream.Collectors;
 public class AuditLogController {
 
     private final AuditLogRepository auditLogRepository;
+    private final AuditService auditService;
+    private final PatientRepository patientRepository;
+    private final ObjectMapper objectMapper;
 
-    @PreAuthorize("hasAnyRole('FRONT_DESK','BRANCH_ADMIN','SUPER_ADMIN')")
+    public static final String ENTITY_REVENUE_REPORT = "REVENUE_REPORT";
+    public static final String ACTION_REVENUE_REPORT_VIEWED = "REVENUE_REPORT_VIEWED";
+    public static final String ACTION_REVENUE_REPORT_EXPORTED = "REVENUE_REPORT_EXPORTED";
+
+    @PreAuthorize("hasAnyRole('FRONT_DESK','LAB_RECEPTIONIST','LAB_RECEPTION','BRANCH_ADMIN','SUPER_ADMIN')")
     @GetMapping
     public PageResponse<AuditLogResponse> getAuditLogs(
             @RequestParam(required = false) String action,
@@ -53,11 +68,14 @@ public class AuditLogController {
                 String branchCode = SecurityUtils.getCurrentBranchId();
                 log.info("User requesting audit logs for branch: {}", branchCode);
                 if (branchCode == null || branchCode.isBlank()) {
-                    // If branch code is not available, return empty
-                    return new PageResponse<>(List.of(), page, size, 0, 0, true);
+                    branchCode = "SYSTEM";
+                    log.warn("Branch code missing from JWT. Falling back to audit branch scope: {}", branchCode);
+                    result = auditLogRepository.findByBranchCodeFiltered(branchCode, action, entityType, performedBy,
+                            search, pageable);
+                } else {
+                    result = auditLogRepository.findByBranchCodeFiltered(branchCode, action, entityType, performedBy,
+                            search, pageable);
                 }
-                result = auditLogRepository.findByBranchCodeFiltered(branchCode, action, entityType, performedBy,
-                        search, pageable);
             }
 
             List<AuditLogResponse> responses = result.getContent().stream()
@@ -76,6 +94,22 @@ public class AuditLogController {
             log.error("Error fetching audit logs", e);
             throw e;
         }
+    }
+
+    /**
+     * Records revenue report screen access. {@code performedBy} is resolved from the security context.
+     */
+    @PreAuthorize("hasAnyRole('FRONT_DESK','BRANCH_ADMIN','SUPER_ADMIN')")
+    @PostMapping("/revenue-report-access")
+    public ResponseEntity<Void> recordRevenueReportAccess(
+            @RequestBody(required = false) RevenueReportAccessRequest body,
+            HttpServletRequest request) {
+        String event = body != null && body.getEvent() != null ? body.getEvent().trim().toUpperCase() : "VIEW";
+        String action = "EXPORT".equals(event) ? ACTION_REVENUE_REPORT_EXPORTED : ACTION_REVENUE_REPORT_VIEWED;
+        String details = body != null ? body.getDetail() : null;
+        auditService.writeStandalone(action, ENTITY_REVENUE_REPORT, null, null, details,
+                ClientIpResolver.resolve(request));
+        return ResponseEntity.noContent().build();
     }
 
     private String normalizeParam(String param) {
@@ -107,7 +141,39 @@ public class AuditLogController {
         r.setBranchCode(auditLog.getBranchCode());
         r.setIpAddress(auditLog.getIpAddress());
         r.setTimestamp(auditLog.getTimestamp() != null ? auditLog.getTimestamp().toString() : "");
-        r.setDetails(auditLog.getDetails());
+        r.setDetails(enrichPatientNameInDetails(auditLog));
         return r;
+    }
+
+    private String enrichPatientNameInDetails(AuditLog auditLog) {
+        String details = auditLog.getDetails();
+        if (details == null || details.isBlank() || auditLog.getPatientCode() == null || auditLog.getPatientCode().isBlank()) {
+            return details;
+        }
+
+        try {
+            Map<String, Object> detailMap = objectMapper.readValue(details, new TypeReference<>() {
+            });
+            Object patientNameValue = detailMap.get("patientName");
+            String patientName = patientNameValue != null ? patientNameValue.toString() : null;
+
+            if (patientName != null && !patientName.isBlank() && !"UNKNOWN_PATIENT".equals(patientName)) {
+                return details;
+            }
+
+            String resolvedPatientName = patientRepository.findByPatientCode(auditLog.getPatientCode())
+                    .map(PatientEntity::getFullName)
+                    .orElse(null);
+
+            if (resolvedPatientName == null || resolvedPatientName.isBlank()) {
+                return details;
+            }
+
+            detailMap.put("patientName", resolvedPatientName);
+            return objectMapper.writeValueAsString(detailMap);
+        } catch (Exception exception) {
+            log.warn("Could not enrich patient name for audit log {}", auditLog.getId(), exception);
+            return details;
+        }
     }
 }

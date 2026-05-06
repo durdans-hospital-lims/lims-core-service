@@ -9,14 +9,27 @@ import com.uom.lims.api.dispatch.dto.response.DeliveryAttemptResponse;
 import com.uom.lims.api.dispatch.dto.response.DeliveryRecordResponse;
 import com.uom.lims.api.dispatch.dto.response.DispatchDashboardItemResponse;
 import com.uom.lims.api.dispatch.dto.response.DispatchItemResponse;
+import com.uom.lims.api.dispatch.dto.response.DispatchReportResultResponse;
 import com.uom.lims.api.dispatch.dto.response.FailedDeliveryResponse;
 import com.uom.lims.api.dispatch.enums.DeliveryAttemptStatus;
 import com.uom.lims.api.dispatch.enums.DeliveryMethod;
 import com.uom.lims.api.dispatch.enums.DispatchItemStatus;
+import com.uom.lims.api.enums.OrderStatus;
+import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.audit.AuditService;
+import com.uom.lims.entity.OrderEntity;
+import com.uom.lims.entity.OrderItemEntity;
+import com.uom.lims.entity.SampleEntity;
+import com.uom.lims.entity.TestResultEntity;
 import com.uom.lims.event.ReportDispatchDomainEvent;
 import com.uom.lims.exception.InvalidRequestException;
 import com.uom.lims.exception.ResourceNotFoundException;
+import com.uom.lims.patient.PatientEntity;
+import com.uom.lims.patient.PatientRepository;
+import com.uom.lims.repository.OrderItemRepository;
+import com.uom.lims.repository.OrderRepository;
+import com.uom.lims.repository.SampleRepository;
+import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.security.SecurityUtils;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
@@ -33,8 +46,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.Period;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -56,6 +73,11 @@ public class DispatchService {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.UK);
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("h:mm a", Locale.UK);
     private static final DateTimeFormatter RECORD_TS = DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.UK);
+    private static final List<DeliveryMethod> DEFAULT_DELIVERY_METHODS = List.of(
+            DeliveryMethod.SMS,
+            DeliveryMethod.WHATSAPP,
+            DeliveryMethod.EMAIL,
+            DeliveryMethod.POST);
 
     private final ReportDispatchItemRepository itemRepository;
     private final ReportDeliveryAttemptRepository attemptRepository;
@@ -63,11 +85,31 @@ public class DispatchService {
     private final AuditService auditService;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final ObjectMapper objectMapper;
+    private final TestResultRepository testResultRepository;
+    private final SampleRepository sampleRepository;
+    private final OrderItemRepository orderItemRepository;
+    private final OrderRepository orderRepository;
+    private final PatientRepository patientRepository;
 
     @Transactional
     public DispatchItemResponse registerAuthorizedReport(RegisterAuthorizedReportRequest request, String ipAddress) {
+        return registerAuthorizedReportInternal(request, ipAddress, true);
+    }
+
+    @Transactional
+    public DispatchItemResponse registerAuthorizedReportSystem(RegisterAuthorizedReportRequest request, String ipAddress) {
+        return registerAuthorizedReportInternal(request, ipAddress, false);
+    }
+
+    private DispatchItemResponse registerAuthorizedReportInternal(
+            RegisterAuthorizedReportRequest request,
+            String ipAddress,
+            boolean validateBranchContext
+    ) {
         String branch = request.getBranchCode().trim().toUpperCase();
-        assertRegisterBranchAllowed(branch);
+        if (validateBranchContext) {
+            assertRegisterBranchAllowed(branch);
+        }
 
         LocalDateTime authorizedAt = request.getAuthorizedAt() != null
                 ? request.getAuthorizedAt().atZoneSameInstant(DISPLAY_ZONE).toLocalDateTime()
@@ -87,12 +129,14 @@ public class DispatchService {
         if (existing.isEmpty()) {
             entity.setOverallStatus(DispatchItemStatus.PENDING);
         }
-        if (request.getPreferredDeliveryMethods() != null && !request.getPreferredDeliveryMethods().isEmpty()) {
-            try {
-                entity.setPreferredMethodsJson(objectMapper.writeValueAsString(request.getPreferredDeliveryMethods()));
-            } catch (Exception e) {
-                throw new InvalidRequestException("Could not serialize preferred delivery methods");
-            }
+        List<DeliveryMethod> preferredMethods = request.getPreferredDeliveryMethods() != null
+                && !request.getPreferredDeliveryMethods().isEmpty()
+                ? request.getPreferredDeliveryMethods()
+                : DEFAULT_DELIVERY_METHODS;
+        try {
+            entity.setPreferredMethodsJson(objectMapper.writeValueAsString(preferredMethods));
+        } catch (Exception e) {
+            throw new InvalidRequestException("Could not serialize preferred delivery methods");
         }
 
         ReportDispatchItemEntity saved = itemRepository.save(entity);
@@ -199,6 +243,7 @@ public class DispatchService {
 
         item.setOverallStatus(aggregateStatusFromAttempts(item.getAttempts()));
         ReportDispatchItemEntity saved = itemRepository.save(item);
+        updateLinkedOrderIfDelivered(saved);
 
         auditService.log(
                 "DISPATCH_REPORT",
@@ -237,11 +282,14 @@ public class DispatchService {
 
         DispatchReportRequest minimal = DispatchReportRequest.builder()
                 .methods(List.of(attempt.getMethod()))
+                .postalAddress(attempt.getRecipientContact())
+                .trackingNumber(attempt.getTrackingNumber())
                 .build();
         channelService.executeChannel(item, attempt, minimal);
 
         item.setOverallStatus(aggregateStatusFromAttempts(item.getAttempts()));
         ReportDispatchItemEntity saved = itemRepository.save(item);
+        updateLinkedOrderIfDelivered(saved);
 
         auditService.log(
                 "DISPATCH_RETRY",
@@ -261,6 +309,109 @@ public class DispatchService {
         return mapToDetailResponse(saved);
     }
 
+    @Transactional
+    public DispatchItemResponse markAttemptDelivered(UUID attemptId, String ipAddress) {
+        ReportDeliveryAttemptEntity attempt = attemptRepository.findByIdWithItem(attemptId)
+                .orElseThrow(() -> new ResourceNotFoundException("Delivery attempt not found"));
+
+        ReportDispatchItemEntity item = attempt.getDispatchItem();
+        assertBranchAccess(item.getBranchCode());
+
+        if (attempt.getStatus() == DeliveryAttemptStatus.DELIVERED) {
+            updateLinkedOrderIfDelivered(item);
+            return mapToDetailResponse(item);
+        }
+        if (attempt.getStatus() == DeliveryAttemptStatus.FAILED) {
+            throw new InvalidRequestException("Retry failed attempts before marking them delivered");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (attempt.getDispatchedAt() == null) {
+            attempt.setDispatchedAt(now);
+        }
+        attempt.setStatus(DeliveryAttemptStatus.DELIVERED);
+        attempt.setDeliveredAt(now);
+        attempt.setFailureReason(null);
+
+        item.setOverallStatus(aggregateStatusFromAttempts(item.getAttempts()));
+        ReportDispatchItemEntity saved = itemRepository.save(item);
+        updateLinkedOrderIfDelivered(saved);
+
+        auditService.log(
+                "DISPATCH_MARK_DELIVERED",
+                "REPORT_DISPATCH",
+                saved.getId(),
+                saved.getReportReference(),
+                "{\"attemptId\":\"" + attemptId + "\"}",
+                ipAddress);
+
+        applicationEventPublisher.publishEvent(new ReportDispatchDomainEvent(
+                "DISPATCH_MARK_DELIVERED",
+                saved.getReportReference(),
+                saved.getBranchCode(),
+                saved.getOverallStatus().name(),
+                LocalDateTime.now()));
+
+        return mapToDetailResponse(saved);
+    }
+
+    private void updateLinkedOrderIfDelivered(ReportDispatchItemEntity item) {
+        if (item.getOverallStatus() != DispatchItemStatus.DELIVERED) {
+            return;
+        }
+
+        UUID resultId;
+        try {
+            resultId = UUID.fromString(item.getReportReference());
+        } catch (IllegalArgumentException ignored) {
+            return;
+        }
+
+        Optional<TestResultEntity> result = testResultRepository.findById(resultId);
+        if (result.isEmpty()) {
+            return;
+        }
+
+        SampleEntity sample = result.get().getSample();
+        if (sample == null || sample.getOrderItem() == null || sample.getOrderItem().getOrder() == null) {
+            return;
+        }
+
+        OrderItemEntity orderItem = sample.getOrderItem();
+        OrderEntity order = orderItem.getOrder();
+
+        if (sample.getStatus() != SampleStatus.DISPATCHED) {
+            sample.setStatus(SampleStatus.DISPATCHED);
+            sampleRepository.save(sample);
+        }
+        if (orderItem.getStatus() != SampleStatus.DISPATCHED) {
+            orderItem.setStatus(SampleStatus.DISPATCHED);
+            orderItemRepository.save(orderItem);
+        }
+
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return;
+        }
+
+        boolean allItemsDispatched = order.getItems().stream()
+                .filter(itemRow -> !itemRow.isDeleted())
+                .allMatch(this::hasDispatchedActiveSample);
+
+        if (allItemsDispatched && order.getStatus() != OrderStatus.COMPLETED) {
+            order.setStatus(OrderStatus.COMPLETED);
+            orderRepository.save(order);
+        }
+    }
+
+    private boolean hasDispatchedActiveSample(OrderItemEntity orderItem) {
+        return orderItem.getSamples().stream()
+                .filter(sample -> !sample.isDeleted())
+                .filter(sample -> sample.getStatus() != SampleStatus.REJECTED)
+                .max(Comparator.comparing(SampleEntity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(sample -> sample.getStatus() == SampleStatus.DISPATCHED)
+                .orElse(false);
+    }
+
     private void assertRegisterBranchAllowed(String branch) {
         if (isSuperAdmin()) {
             return;
@@ -275,7 +426,7 @@ public class DispatchService {
     }
 
     private void assertBranchAccess(String itemBranch) {
-        if (isSuperAdmin()) {
+        if (isSuperAdmin() || isDispatchRole()) {
             return;
         }
         String mine = SecurityUtils.getCurrentBranchId();
@@ -285,11 +436,12 @@ public class DispatchService {
     }
 
     private ReportDispatchItemEntity loadItemForCurrentUser(String reportReference, String branchCodeParam) {
-        if (isSuperAdmin()) {
-            if (branchCodeParam == null || branchCodeParam.isBlank()) {
-                throw new InvalidRequestException("branchCode query parameter is required for super administrators");
+        if (isSuperAdmin() || isDispatchRole()) {
+            if (branchCodeParam != null && !branchCodeParam.isBlank()) {
+                return itemRepository.findByReportReferenceAndBranchCode(reportReference, branchCodeParam.trim().toUpperCase())
+                        .orElseThrow(() -> new ResourceNotFoundException("Dispatch item not found"));
             }
-            return itemRepository.findByReportReferenceAndBranchCode(reportReference, branchCodeParam.trim().toUpperCase())
+            return itemRepository.findFirstByReportReferenceOrderByAuthorizedAtDesc(reportReference)
                     .orElseThrow(() -> new ResourceNotFoundException("Dispatch item not found"));
         }
         String branch = SecurityUtils.getCurrentBranchId();
@@ -309,7 +461,7 @@ public class DispatchService {
      * Empty = no branch filter (all branches, super admin only).
      */
     private Optional<String> resolveBranchFilterForQuery(String branchCodeParam) {
-        if (isSuperAdmin()) {
+        if (isSuperAdmin() || isDispatchRole()) {
             if (branchCodeParam != null && !branchCodeParam.isBlank()) {
                 return Optional.of(branchCodeParam.trim().toUpperCase());
             }
@@ -320,6 +472,17 @@ public class DispatchService {
             throw new InvalidRequestException("Missing branch in security context");
         }
         return Optional.of(mine.toUpperCase());
+    }
+
+    private boolean isDispatchRole() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return false;
+        }
+        return auth.getAuthorities().stream().anyMatch(a ->
+                "ROLE_DISPATCH".equals(a.getAuthority())
+                        || "ROLE_DISPATCH_OFFICER".equals(a.getAuthority())
+                        || "ROLE_REPORT_DISPATCH".equals(a.getAuthority()));
     }
 
     private boolean isSuperAdmin() {
@@ -361,6 +524,7 @@ public class DispatchService {
                 String pattern = "%" + kw.toLowerCase(Locale.ROOT) + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("reportReference")), pattern),
+                        cb.like(cb.lower(root.get("patientCode")), pattern),
                         cb.like(cb.lower(root.get("patientDisplayName")), pattern),
                         cb.like(cb.lower(root.get("testPanelLabel")), pattern)));
             });
@@ -389,6 +553,7 @@ public class DispatchService {
                 String pattern = "%" + kw.toLowerCase(Locale.ROOT) + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("reportReference")), pattern),
+                        cb.like(cb.lower(root.get("patientCode")), pattern),
                         cb.like(cb.lower(root.get("patientDisplayName")), pattern),
                         cb.like(cb.lower(root.get("testPanelLabel")), pattern)));
             });
@@ -434,6 +599,10 @@ public class DispatchService {
         String deliveredDisplay = (rowStatus == DispatchItemStatus.DELIVERED && maxDel != null)
                 ? maxDel.atZone(DISPLAY_ZONE).format(RECORD_TS)
                 : null;
+        ReportDeliveryAttemptEntity trackedAttempt = attempts.stream()
+                .filter(a -> a.getTrackingNumber() != null && !a.getTrackingNumber().isBlank())
+                .reduce((first, second) -> second)
+                .orElse(null);
 
         return DeliveryRecordResponse.builder()
                 .reportId(item.getReportReference())
@@ -443,6 +612,8 @@ public class DispatchService {
                 .status(rowStatus)
                 .dispatchedTime(minDisp != null ? minDisp.atZone(DISPLAY_ZONE).format(RECORD_TS) : "—")
                 .deliveredTime(deliveredDisplay)
+                .trackingNumber(trackedAttempt != null ? trackedAttempt.getTrackingNumber() : null)
+                .trackingUrl(trackedAttempt != null ? trackedAttempt.getTrackingUrl() : null)
                 .build();
     }
 
@@ -464,19 +635,151 @@ public class DispatchService {
     private DispatchItemResponse mapToDetailResponse(ReportDispatchItemEntity e) {
         List<ReportDeliveryAttemptEntity> attempts = attemptRepository.findByDispatchItemIdOrderByCreatedAtAsc(e.getId());
         List<DeliveryAttemptResponse> attemptDtos = attempts.stream().map(this::toAttemptDto).toList();
+        DispatchReportPayload reportPayload = resolveReportPayload(e);
         return DispatchItemResponse.builder()
                 .id(e.getId())
                 .reportReference(e.getReportReference())
                 .branchCode(e.getBranchCode())
-                .patientCode(e.getPatientCode())
-                .patientDisplayName(e.getPatientDisplayName())
+                .patientCode(Optional.ofNullable(reportPayload.patientCode()).orElse(e.getPatientCode()))
+                .patientDisplayName(Optional.ofNullable(reportPayload.patientName()).orElse(e.getPatientDisplayName()))
+                .patientAge(reportPayload.patientAge())
+                .patientGender(reportPayload.patientGender())
+                .patientDob(reportPayload.patientDob())
+                .referringDoctor(reportPayload.referringDoctor())
+                .ward(reportPayload.ward())
                 .testPanelLabel(e.getTestPanelLabel())
+                .sampleId(reportPayload.sampleId())
+                .sampleCollectedAt(reportPayload.sampleCollectedAt())
+                .reportGeneratedAt(reportPayload.reportGeneratedAt())
+                .authorizedBy(reportPayload.authorizedBy())
+                .clinicalNote(reportPayload.clinicalNote())
+                .results(reportPayload.results())
                 .artifactUri(e.getArtifactUri())
                 .authorizedAt(e.getAuthorizedAt().atZone(DISPLAY_ZONE).toOffsetDateTime())
                 .overallStatus(e.getOverallStatus())
                 .preferredDeliveryMethods(parsePreferredMethods(e))
                 .attempts(attemptDtos)
                 .build();
+    }
+
+    private DispatchReportPayload resolveReportPayload(ReportDispatchItemEntity item) {
+        UUID resultId;
+        try {
+            resultId = UUID.fromString(item.getReportReference());
+        } catch (IllegalArgumentException ignored) {
+            return DispatchReportPayload.empty();
+        }
+
+        Optional<TestResultEntity> anchorResult = testResultRepository.findById(resultId);
+        if (anchorResult.isEmpty()) {
+            return DispatchReportPayload.empty();
+        }
+
+        TestResultEntity anchor = anchorResult.get();
+        SampleEntity sample = anchor.getSample();
+        OrderItemEntity orderItem = sample == null ? null : sample.getOrderItem();
+        OrderEntity order = orderItem == null ? null : orderItem.getOrder();
+
+        String patientCode = order == null ? item.getPatientCode() : trimToNull(order.getPatientId());
+        PatientEntity patient = patientCode == null
+                ? null
+                : patientRepository.findByPatientCode(patientCode).orElse(null);
+
+        List<TestResultEntity> sampleResults = sample == null
+                ? List.of(anchor)
+                : testResultRepository.findBySampleId(sample.getId()).stream()
+                .filter(result -> !result.isDeleted())
+                .filter(result -> !Boolean.TRUE.equals(result.getDraft()))
+                .sorted(Comparator
+                        .comparing((TestResultEntity result) -> result.getParameter().getDisplayOrder(),
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(result -> result.getParameter().getName(), String.CASE_INSENSITIVE_ORDER))
+                .toList();
+
+        String authorizedBy = firstNonBlank(sampleResults.stream()
+                .map(TestResultEntity::getClinicallyAuthorizedBy)
+                .toList());
+        String clinicalNote = firstNonBlank(sampleResults.stream()
+                .map(TestResultEntity::getClinicalNote)
+                .toList());
+        OffsetDateTime authorizedAt = anchor.getClinicallyAuthorizedAt() == null
+                ? item.getAuthorizedAt().atZone(DISPLAY_ZONE).toOffsetDateTime()
+                : anchor.getClinicallyAuthorizedAt().atZone(DISPLAY_ZONE).toOffsetDateTime();
+
+        return new DispatchReportPayload(
+                patient == null ? patientCode : patient.getPatientCode(),
+                patient == null ? null : patient.getFullName(),
+                patient == null ? null : calculateAge(patient.getDob()),
+                patient == null || patient.getGender() == null ? null : patient.getGender().name(),
+                patient == null ? null : patient.getDob(),
+                order == null ? null : trimToNull(order.getReferringDoctor()),
+                order == null ? null : trimToNull(order.getReferringDepartment()),
+                sample == null ? null : sample.getBarcode(),
+                sample == null || sample.getCollectedAt() == null ? null : sample.getCollectedAt().atZone(DISPLAY_ZONE).toOffsetDateTime(),
+                authorizedAt,
+                authorizedBy,
+                clinicalNote,
+                sampleResults.stream().map(this::toDispatchResult).toList());
+    }
+
+    private DispatchReportResultResponse toDispatchResult(TestResultEntity result) {
+        String flag = result.getFlag() == null ? null : result.getFlag().name();
+        return DispatchReportResultResponse.builder()
+                .parameter(result.getParameter().getName())
+                .result(result.getResultValue())
+                .unit(result.getParameter().getUnit())
+                .flag(flag)
+                .referenceRange(formatReferenceRange(result.getParameter().getRefLow(), result.getParameter().getRefHigh()))
+                .abnormal(flag != null && !"NORMAL".equals(flag))
+                .build();
+    }
+
+    private String formatReferenceRange(BigDecimal low, BigDecimal high) {
+        if (low == null && high == null) {
+            return null;
+        }
+        if (low == null) {
+            return "<= " + formatDecimal(high);
+        }
+        if (high == null) {
+            return ">= " + formatDecimal(low);
+        }
+        return formatDecimal(low) + " - " + formatDecimal(high);
+    }
+
+    private String formatDecimal(BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString();
+    }
+
+    private Integer calculateAge(LocalDate dob) {
+        return dob == null ? null : Period.between(dob, LocalDate.now(DISPLAY_ZONE)).getYears();
+    }
+
+    private String firstNonBlank(List<String> values) {
+        return values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElse(null);
+    }
+
+    private record DispatchReportPayload(
+            String patientCode,
+            String patientName,
+            Integer patientAge,
+            String patientGender,
+            LocalDate patientDob,
+            String referringDoctor,
+            String ward,
+            String sampleId,
+            OffsetDateTime sampleCollectedAt,
+            OffsetDateTime reportGeneratedAt,
+            String authorizedBy,
+            String clinicalNote,
+            List<DispatchReportResultResponse> results
+    ) {
+        static DispatchReportPayload empty() {
+            return new DispatchReportPayload(null, null, null, null, null, null, null, null, null, null, null, null, List.of());
+        }
     }
 
     private DeliveryAttemptResponse toAttemptDto(ReportDeliveryAttemptEntity a) {
@@ -488,19 +791,23 @@ public class DispatchService {
                 .retryCount(a.getRetryCount())
                 .dispatchedAt(a.getDispatchedAt() != null ? a.getDispatchedAt().atZone(DISPLAY_ZONE).toOffsetDateTime() : null)
                 .deliveredAt(a.getDeliveredAt() != null ? a.getDeliveredAt().atZone(DISPLAY_ZONE).toOffsetDateTime() : null)
+                .recipientContact(a.getRecipientContact())
+                .trackingNumber(a.getTrackingNumber())
+                .trackingUrl(a.getTrackingUrl())
                 .build();
     }
 
     private List<DeliveryMethod> parsePreferredMethods(ReportDispatchItemEntity e) {
         if (e.getPreferredMethodsJson() == null || e.getPreferredMethodsJson().isBlank()) {
-            return List.of();
+            return DEFAULT_DELIVERY_METHODS;
         }
         try {
-            return objectMapper.readValue(e.getPreferredMethodsJson(), new TypeReference<>() {
+            List<DeliveryMethod> methods = objectMapper.readValue(e.getPreferredMethodsJson(), new TypeReference<>() {
             });
+            return methods == null || methods.isEmpty() ? DEFAULT_DELIVERY_METHODS : methods;
         } catch (Exception ex) {
             log.warn("Invalid preferred_methods JSON for {}", e.getReportReference());
-            return List.of();
+            return DEFAULT_DELIVERY_METHODS;
         }
     }
 

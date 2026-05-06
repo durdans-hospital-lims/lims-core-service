@@ -53,4 +53,14 @@ public interface PhlebotomyApi {
     ResponseEntity<ApiResponse<PageResponse<CollectionHistoryResponse>>> getCollectionHistory(
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "10") int size);
+
+    @Operation(summary = "Get sample detail", description = "Returns specimen metadata for phlebotomy drill-down (history detail)")
+    @GetMapping("/samples/{sampleId}")
+    @ResponseStatus(HttpStatus.OK)
+    ResponseEntity<ApiResponse<SampleResponse>> getSampleDetail(@PathVariable("sampleId") UUID sampleId);
+
+    @Operation(summary = "Record specimen label print", description = "Increments persisted barcode label print count after user confirms print/reprint")
+    @PostMapping("/samples/{sampleId}/print-label")
+    @ResponseStatus(HttpStatus.OK)
+    ResponseEntity<ApiResponse<SampleResponse>> recordLabelPrint(@PathVariable("sampleId") UUID sampleId);
 }

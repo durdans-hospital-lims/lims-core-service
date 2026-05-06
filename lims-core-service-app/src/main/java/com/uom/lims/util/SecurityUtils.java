@@ -42,8 +42,20 @@ public class SecurityUtils {
     public String getCurrentUsername() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof JwtAuthenticationToken jwtToken) {
+            // Try 'name' (Full Name) first, as it's most readable
+            Object name = jwtToken.getTokenAttributes().get("name");
+            if (name != null) {
+                return name.toString();
+            }
+
+            // Fallback to 'preferred_username' (Login ID)
             Object username = jwtToken.getTokenAttributes().get("preferred_username");
-            return username != null ? username.toString() : "system";
+            if (username != null) {
+                return username.toString();
+            }
+
+            // Last resort: the principal name (often the 'sub' UUID)
+            return jwtToken.getName();
         }
         return "system";
     }

@@ -5,8 +5,10 @@ import com.uom.lims.api.dto.request.BillDiscountRequest;
 import com.uom.lims.api.dto.request.PaymentRequest;
 import com.uom.lims.api.dto.response.ApiResponse;
 import com.uom.lims.api.dto.response.BillResponse;
+
 import com.uom.lims.service.BillingService;
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -55,4 +57,5 @@ public class BillController implements BillApi {
     public ResponseEntity<ApiResponse<BillResponse>> recordBillPrint(UUID billId) {
         return ResponseEntity.ok(ApiResponse.success(billingService.recordBillPrint(billId)));
     }
+
 }

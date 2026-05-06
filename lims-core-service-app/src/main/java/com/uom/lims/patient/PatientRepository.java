@@ -48,8 +48,7 @@ public interface PatientRepository
 
         long countByBranchCodeAndCreatedAtAfter(String branchCode, Instant dateTime);
 
-        long countByEmailVerifiedFalseOrPhoneVerifiedFalse();
+        long countByEmailVerifiedFalseAndPhoneVerifiedFalse();
 
-        long countByBranchCodeAndEmailVerifiedFalseOrBranchCodeAndPhoneVerifiedFalse(String branchCode1,
-                        String branchCode2);
+        long countByBranchCodeAndEmailVerifiedFalseAndPhoneVerifiedFalse(String branchCode);
 }

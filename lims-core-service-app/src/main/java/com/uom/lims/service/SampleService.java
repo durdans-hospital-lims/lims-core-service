@@ -20,14 +20,20 @@ import com.uom.lims.repository.SampleRepository;
 import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.util.ReferenceNumberGenerator;
 import com.uom.lims.util.SecurityUtils;
+import jakarta.persistence.criteria.JoinType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.List;
 import java.util.UUID;
 
@@ -56,30 +62,111 @@ public class SampleService {
      * the active queue short and action-focused for the phlebotomist.
      *
      * @param pageable pagination parameters from the request
-     * @return paginated page of SampleResponse DTOs in PENDING_COLLECTION status
+     * @return paginated page of SampleResponse DTOs in PENDING_COLLECTION or RECOLLECTION_REQUIRED status
      */
     @Transactional(readOnly = true)
     public Page<SampleResponse> getPendingSamples(Pageable pageable) {
-        return sampleRepository.findAllByStatusAndDeletedFalse(SampleStatus.PENDING_COLLECTION, pageable)
+        return sampleRepository.findAllByStatusInAndDeletedFalse(
+                        List.of(SampleStatus.PENDING_COLLECTION, SampleStatus.RECOLLECTION_REQUIRED), pageable)
                 .map(this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SampleResponse> searchSamplesForReprint(String query) {
+        String normalizedQuery = query == null ? "" : query.trim().toLowerCase();
+
+        if (normalizedQuery.isBlank()) {
+            return List.of();
+        }
+
+        Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Specification<SampleEntity> specification = (root, criteriaQuery, criteriaBuilder) -> {
+            var orderItemJoin = root.join("orderItem", JoinType.INNER);
+            var orderJoin = orderItemJoin.join("order", JoinType.INNER);
+
+            var testJoin = criteriaQuery.from(TestCatalogEntity.class);
+            var testLink = criteriaBuilder.equal(testJoin.get("id"), orderItemJoin.get("testId"));
+
+            String likeQuery = "%" + normalizedQuery + "%";
+
+            var barcodePredicate = criteriaBuilder.like(criteriaBuilder.lower(root.get("barcode")), likeQuery);
+            var patientPredicate = criteriaBuilder.like(criteriaBuilder.lower(orderJoin.get("patientId")), likeQuery);
+            var orderPredicate = criteriaBuilder.like(criteriaBuilder.lower(orderJoin.get("orderNo")), likeQuery);
+            var testNamePredicate = criteriaBuilder.like(criteriaBuilder.lower(testJoin.get("testName")), likeQuery);
+            var testCodePredicate = criteriaBuilder.like(criteriaBuilder.lower(testJoin.get("testCode")), likeQuery);
+            var notDeletedPredicate = criteriaBuilder.isFalse(root.get("deleted"));
+            var notRejectedPredicate = criteriaBuilder.notEqual(root.get("status"), SampleStatus.REJECTED);
+
+            criteriaQuery.distinct(true);
+
+            return criteriaBuilder.and(
+                    notDeletedPredicate,
+                    notRejectedPredicate,
+                    testLink,
+                    criteriaBuilder.or(
+                            barcodePredicate,
+                            patientPredicate,
+                            orderPredicate,
+                            testNamePredicate,
+                            testCodePredicate));
+        };
+
+        return sampleRepository.findAll(specification, pageable)
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     /**
      * WHY: Collection history is a separate view from the active queue — supervisors
      * and quality managers review completed and rejected samples for throughput analysis.
-     * Combining both COLLECTED and REJECTED in history gives a complete audit trail.
+     * Combining COLLECTED, REJECTED, and RECOLLECTION_REQUIRED in history gives a
+     * complete audit trail, including recollection tickets generated after rejection.
      *
      * @param pageable pagination parameters from the request
      * @return paginated page of CollectionHistoryResponse DTOs
      */
     @Transactional(readOnly = true)
     public Page<CollectionHistoryResponse> getCollectionHistory(Pageable pageable) {
-        // WHY: We query COLLECTED first — REJECTED samples are included separately.
-        // Using findAll with status filter and mapping both statuses as history is the
+        // WHY: We query all collection outcomes plus recollection requests.
+        // Using findAll with status filter and mapping these statuses as history is the
         // simplest approach given the current repository contract.
-        Page<SampleEntity> collected = sampleRepository
-                .findAllByStatusAndDeletedFalse(SampleStatus.COLLECTED, pageable);
-        return collected.map(this::toHistoryResponse);
+        Page<SampleEntity> history = sampleRepository.findHistoryForStatuses(
+                        List.of(
+                                SampleStatus.COLLECTED,
+                                SampleStatus.REJECTED,
+                                SampleStatus.RECOLLECTION_REQUIRED),
+                        pageable);
+        return history.map(this::toHistoryResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public SampleResponse getSampleDetail(UUID sampleId) {
+        SampleEntity sample = sampleRepository.findById(sampleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Sample not found with id: " + sampleId));
+        if (sample.isDeleted()) {
+            throw new ResourceNotFoundException("Sample not found with id: " + sampleId);
+        }
+        return toResponse(sample);
+    }
+
+    public SampleResponse recordLabelPrint(UUID sampleId) {
+        SampleEntity sample = sampleRepository.findById(sampleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Sample not found with id: " + sampleId));
+        if (sample.isDeleted()) {
+            throw new ResourceNotFoundException("Sample not found with id: " + sampleId);
+        }
+        if (sample.getStatus() != SampleStatus.COLLECTED) {
+            throw new InvalidStateTransitionException(
+                    "Cannot register specimen label print for sample "
+                            + sample.getBarcode()
+                            + " — only COLLECTED specimens produce bedside labels.");
+        }
+
+        sample.setLabelPrintCount(sample.getLabelPrintCount() + 1);
+        SampleEntity saved = sampleRepository.save(sample);
+        log.info("Specimen label print recorded for {} (count={})", saved.getBarcode(), saved.getLabelPrintCount());
+        return toResponse(saved);
     }
 
     /**
@@ -155,11 +242,12 @@ public class SampleService {
                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found with id: " + sampleId));
 
         if (sample.getStatus() != SampleStatus.PENDING_COLLECTION
-                && sample.getStatus() != SampleStatus.COLLECTED) {
+                && sample.getStatus() != SampleStatus.COLLECTED
+                && sample.getStatus() != SampleStatus.RECOLLECTION_REQUIRED) {
             throw new InvalidStateTransitionException(
                     "Cannot reject sample " + sample.getBarcode() +
                             " — current status is " + sample.getStatus() +
-                            ". Only PENDING_COLLECTION or COLLECTED samples can be rejected.");
+                            ". Only PENDING_COLLECTION, COLLECTED, or RECOLLECTION_REQUIRED samples can be rejected.");
         }
 
         // WHY: Free-text justification is mandatory for 'OTHER' to prevent
@@ -176,6 +264,7 @@ public class SampleService {
         sample.setRejectedAt(Instant.now());
         sample.setRejectedBy(securityUtils.getCurrentUsername());
         sample.setRejectionReason(request.getRejectionReason());
+        sample.setRejectionNotes(request.getRejectionNotes());
         SampleEntity rejectedSample = sampleRepository.save(sample);
         log.info("Sample {} rejected by {} for reason: {}",
                 sample.getBarcode(), sample.getRejectedBy(), sample.getRejectionReason());
@@ -190,6 +279,7 @@ public class SampleService {
         recollection.setStatus(SampleStatus.RECOLLECTION_REQUIRED);
         recollection.setParentSample(rejectedSample);
         recollection.setRecollectionCount(rejectedSample.getRecollectionCount() + 1);
+        recollection.setCreatedBy(securityUtils.getCurrentUsername());
 
         SampleEntity savedRecollection = sampleRepository.save(recollection);
         log.info("Recollection sample {} created for rejected sample {}",
@@ -209,9 +299,19 @@ public class SampleService {
      * @return the SampleResponse DTO safe for exposure outside the service layer
      */
     private SampleResponse toResponse(SampleEntity sample) {
+        String patientId = sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null
+                ? sample.getOrderItem().getOrder().getPatientId()
+                : null;
+        PatientResponse patient = getPatientSafely(patientId);
+
         SamplePatientInfo patientInfo = SamplePatientInfo.builder()
-                .pid(sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null
-                        ? sample.getOrderItem().getOrder().getPatientId()
+                .pid(patientId)
+                .name(patient != null ? patient.getFullName() : null)
+                .age(patient != null && patient.getDob() != null
+                        ? Period.between(patient.getDob(), LocalDate.now()).getYears()
+                        : null)
+                .gender(patient != null && patient.getGender() != null
+                        ? patient.getGender().name()
                         : null)
                 .build();
 
@@ -236,6 +336,8 @@ public class SampleService {
                 .collectedAt(sample.getCollectedAt())
                 .collectedBy(sample.getCollectedBy())
                 .rejectionReason(sample.getRejectionReason())
+                .rejectionNotes(sample.getRejectionNotes())
+                .printCount(sample.getLabelPrintCount())
                 .build();
     }
 
@@ -251,19 +353,51 @@ public class SampleService {
                 ? sample.getOrderItem().getOrder().getPatientId()
                 : null;
 
-        PatientResponse patient = patientId != null
-                ? patientClientService.getPatientByCode(patientId, securityUtils.getCurrentBearerToken())
-                : null;
+        PatientResponse patient = getPatientSafely(patientId);
+
+        TestCatalogEntity test = testCatalogRepository
+                .findById(sample.getOrderItem().getTestId()).orElse(null);
+        Instant eventTime = sample.getCollectedAt() != null
+                ? sample.getCollectedAt()
+                : sample.getRejectedAt() != null
+                        ? sample.getRejectedAt()
+                        : sample.getCreatedAt();
+        String eventBy = sample.getCollectedBy() != null
+                ? sample.getCollectedBy()
+                : sample.getRejectedBy() != null
+                        ? sample.getRejectedBy()
+                        : sample.getCreatedBy();
+        long waitTime = sample.getCreatedAt() != null && eventTime != null
+                ? java.time.temporal.ChronoUnit.MINUTES.between(sample.getCreatedAt(), eventTime)
+                : 0;
 
         return CollectionHistoryResponse.builder()
                 .id(sample.getId())
                 .sampleId(sample.getBarcode())
                 .patientName(patient != null ? patient.getFullName() : null)
                 .pid(patientId)
+                .testCodes(test != null ? List.of(test.getTestCode()) : List.of())
+                .tubeType(sample.getTubeType())
                 .priority(sample.getPriority())
                 .status(sample.getStatus())
-                .collectedAt(sample.getCollectedAt())
-                .collectedBy(sample.getCollectedBy())
+                .collectedAt(eventTime)
+                .collectedBy(eventBy)
+                .waitTime(waitTime)
+                .rejectionNotes(sample.getRejectionNotes())
+                .printCount(sample.getLabelPrintCount())
                 .build();
+    }
+
+    private PatientResponse getPatientSafely(String patientId) {
+        if (patientId == null) {
+            return null;
+        }
+
+        try {
+            return patientClientService.getPatientByCode(patientId, securityUtils.getCurrentBearerToken());
+        } catch (Exception e) {
+            log.warn("Unable to enrich sample response with patient {} details", patientId, e);
+            return null;
+        }
     }
 }

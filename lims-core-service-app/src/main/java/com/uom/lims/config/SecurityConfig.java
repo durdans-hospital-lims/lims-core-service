@@ -24,30 +24,30 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .csrf(AbstractHttpConfigurer::disable)
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
-                // Public endpoints
-                .requestMatchers("/actuator/**").permitAll()
-                .requestMatchers("/test/**").permitAll()
-                .requestMatchers("/api/v1/patients/verify-email").permitAll()
-                .requestMatchers("/email-verification-success.html", "/email-verification-error.html").permitAll()
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        // Public endpoints
+                        .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/test/**").permitAll()
+                        .requestMatchers("/api/v1/patients/verify-email").permitAll()
+                        .requestMatchers("/email-verification-success.html", "/email-verification-error.html")
+                        .permitAll()
 
-                // Role-restricted endpoints
-                .requestMatchers("/api/v1/mlt/**").hasRole("MLT")
-                .requestMatchers("/api/v1/reception/**").hasRole("LAB_RECEPTION")
-                .requestMatchers("/api/v1/branch-management/**").hasRole("BRANCH_ADMIN")
+                        // Role-restricted endpoints
+                        .requestMatchers("/api/v1/mlt/**").hasAnyRole("MLT", "LAB_SUPERVISOR", "BRANCH_ADMIN", "SUPER_ADMIN")
+                        .requestMatchers("/api/v1/reception/**").hasAnyRole("LAB_RECEPTIONIST", "LAB_RECEPTION", "BRANCH_ADMIN", "SUPER_ADMIN")
+                        .requestMatchers("/api/v1/verification/**")
+                                .hasAnyRole("LAB_SUPERVISOR", "BRANCH_ADMIN", "SUPER_ADMIN")
 
-                // All other API endpoints require authentication
-                .requestMatchers("/api/**").authenticated()
+                        // All other API endpoints require authentication
+                        .requestMatchers("/api/**").authenticated()
 
-                // Block everything else
-                .anyRequest().denyAll())
-            .oauth2ResourceServer(oauth2 ->
-                oauth2.jwt(jwt ->
-                    jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                        // Block everything else
+                        .anyRequest().denyAll())
+                .oauth2ResourceServer(
+                        oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
         return http.build();
     }
 
@@ -69,9 +69,9 @@ public class SecurityConfig {
             }
 
             return roles.stream()
-                .map(Object::toString)
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
-                .collect(Collectors.toList());
+                    .map(Object::toString)
+                    .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                    .collect(Collectors.toList());
         });
 
         return converter;
@@ -80,7 +80,15 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:3001"));
+        configuration.setAllowedOriginPatterns(Arrays.asList(
+                "http://localhost:3000",
+                "http://localhost:3001",
+                "http://localhost:3002",
+                "http://localhost:3003",
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:3001",
+                "http://127.0.0.1:3002",
+                "http://127.0.0.1:3003"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type"));
         configuration.setAllowCredentials(true);

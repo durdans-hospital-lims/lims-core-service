@@ -6,7 +6,7 @@ import java.util.UUID;
 public record MltWorklistItemResponse(
         UUID sampleId,
         String barcode,
-        UUID orderId,
+        String orderId,
         UUID orderItemId,
         String patientId,
         String testName,

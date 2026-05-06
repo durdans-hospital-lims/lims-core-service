@@ -4,6 +4,7 @@ import com.uom.lims.api.ordering.OrderApi;
 import com.uom.lims.api.dto.request.OrderCreateRequest;
 import com.uom.lims.api.dto.response.ApiResponse;
 import com.uom.lims.api.dto.response.OrderResponse;
+import com.uom.lims.api.dto.response.OrderTrackingResponse;
 import com.uom.lims.api.common.PageResponse;
 import com.uom.lims.service.OrderService;
 import lombok.RequiredArgsConstructor;
@@ -36,8 +37,8 @@ public class OrderController implements OrderApi {
     }
 
     @Override
-    @PreAuthorize("hasRole('BILLING_OFFICER')")
-    public ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> getOrders(int page, int size, String sort) {
+    @PreAuthorize("hasAnyRole('BILLING_OFFICER','FRONT_DESK','BRANCH_ADMIN','SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> getOrders(int page, int size, String patientId, String sort) {
         Sort springSort;
         try {
             String[] sortParts = sort.split(",");
@@ -48,7 +49,7 @@ public class OrderController implements OrderApi {
             springSort = Sort.by(Sort.Direction.DESC, "createdAt");
         }
 
-        Page<OrderResponse> result = orderService.getOrders(PageRequest.of(page, size, springSort));
+        Page<OrderResponse> result = orderService.getOrders(PageRequest.of(page, size, springSort), patientId);
 
         PageResponse<OrderResponse> pageResponse = new PageResponse<>(
                 result.getContent(),
@@ -61,9 +62,15 @@ public class OrderController implements OrderApi {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('BILLING_OFFICER', 'PHLEBOTOMIST')")
+    @PreAuthorize("hasAnyRole('BILLING_OFFICER','PHLEBOTOMIST','FRONT_DESK','BRANCH_ADMIN','SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<OrderResponse>> getOrderById(UUID id) {
         return ResponseEntity.ok(ApiResponse.success(orderService.getOrderById(id)));
+    }
+
+    @Override
+    @PreAuthorize("hasAnyRole('BILLING_OFFICER','PHLEBOTOMIST','FRONT_DESK','BRANCH_ADMIN','SUPER_ADMIN','MLT','LAB_SUPERVISOR','PATHOLOGIST','DISPATCH','DISPATCH_OFFICER','REPORT_DISPATCH')")
+    public ResponseEntity<ApiResponse<OrderTrackingResponse>> getOrderTracking(UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(orderService.getOrderTracking(id)));
     }
 
     @Override

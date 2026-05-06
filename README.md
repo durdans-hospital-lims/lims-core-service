@@ -1,105 +1,117 @@
-# Durdans LIMS - Core Service
+# Durdans LIMS Core Service
 
-An enterprise-level, highly scalable backend service for the Durdans Hospital Laboratory Information Management System (LIMS). This project is built using **Java 21** and **Spring Boot 3.5**, implementing a robust multi-module architecture.
+Enterprise backend service for Durdans Hospital Laboratory Information Management System (LIMS), built with Java 21 and Spring Boot.
 
----
+![Java](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?logo=springboot&logoColor=white)
+![Gradle](https://img.shields.io/badge/Gradle-02303A?logo=gradle&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-336791?logo=postgresql&logoColor=white)
+![JPA](https://img.shields.io/badge/JPA-Hibernate-59666C?logo=hibernate&logoColor=white)
+![Liquibase](https://img.shields.io/badge/Liquibase-2962FF?logo=liquibase&logoColor=white)
+![Keycloak](https://img.shields.io/badge/Keycloak-4D4D4D?logo=keycloak&logoColor=white)
+![Kafka](https://img.shields.io/badge/Kafka-231F20?logo=apachekafka&logoColor=white)
+![AWS S3](https://img.shields.io/badge/AWS_S3-569A31?logo=amazons3&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 
-## 🏗 Architecture & Repository Structure
+## Overview
 
-The project strictly follows a **multi-module structure** to enforce separation of concerns between API definitions and core business logic.
+This service owns the core laboratory workflows and APIs, including:
 
-- `lims-core-service-api/`: Defines DTOs, API Interfaces, and shared models. It acts as the contract for the REST APIs, making it easy to share API definitions across different services or even client SDKs.
-- `lims-core-service-app/`: The main executable Spring Boot application containing all domain entities, repositories, services, configurations, and controllers implementing the API endpoints.
+- patient and identity integration
+- order and billing lifecycle
+- sample collection, rejection, recollection, and tracking
+- accessioning, MLT result entry, supervisor verification, and clinical authorization
+- report dispatch and audit logging
 
----
+## 🏗 Architecture
 
-## 🚀 Tech Stack
+The repository uses a multi-module Gradle structure:
 
-- **Framework**: Spring Boot 3.5.10 (Java 21)
-- **Database Layer**: Spring Data JPA & PostgreSQL
-- **Database Migrations**: Liquibase
-- **Security**: Spring Security + OAuth2 Resource Server (Keycloak Integration for JWT validation)
-- **File Storage**: Amazon S3 / LocalStack (AWS SDK v2)
-- **Event Driven / Messaging**: Spring Kafka
-- **Caching**: Caffeine Cache
-- **Documentation**: Swagger/OpenAPI 3
-- **Email Service**: Spring Boot Mail
-- **Build Tool**: Gradle
+- `lims-core-service-api`: API contracts, DTOs, enums, and interface-level definitions
+- `lims-core-service-app`: executable Spring Boot application with controllers, services, entities, repositories, security, and migrations
 
----
+## 🧰 Tech Stack
 
-## ✨ Features
+- Java 21
+- Spring Boot 3.5
+- Spring Data JPA + PostgreSQL
+- Liquibase
+- Spring Security (OAuth2 Resource Server / JWT)
+- Keycloak (identity and access)
+- Kafka (event workflows)
+- AWS SDK v2 (S3 integration)
+- Caffeine cache
+- Spring Mail
+- OpenAPI/Swagger
+- Gradle
 
-- **Patient Management**: Complete lifecycle and record management for hospital patients.
-- **Document Management**: Securely handles uploading, storage, and retrieval of documents (PDFs, Images up to 10MB) via Amazon S3.
-- **Role-Based Access Control**: Hardened security layer intercepting requests and authenticating JWTs via Keycloak (`lims-realm`).
-- **Event-Driven Workflows**: Real-time communication and notification handling via Kafka topics.
-- **Auditing & Metadata**: Comprehensive tracking and logging of domain operations.
+## ✅ Prerequisites
 
----
+Before running locally, ensure these dependencies are available:
 
-## ⚙️ Prerequisites
+- JDK 21
+- PostgreSQL
+- Keycloak
+- Kafka
+- LocalStack (if using local S3 emulation)
 
-Ensure the following tools and dependencies are running on your local machine before starting the application:
+If you use the infrastructure repository, start required containers first.
 
-- **Java 21 JDK**
-- **PostgreSQL**: Port `5433` (as configured for local development)
-- **Keycloak**: Port `8081` (Realm: `lims-realm`)
-- **Apache Kafka**: Port `9092`
-- **LocalStack**: Port `4566` (Used to mock Amazon S3 for `lims-patient-documents` bucket locally)
+## 🗂 Repository Layout
 
-> **Note**: Typically, the infrastructure components (DB, Keycloak, Kafka, LocalStack) are managed via Docker Compose (`lims-infrastructure`). Ensure those containers are spun up first.
+- `build.gradle`, `settings.gradle`: root multi-module build config
+- `lims-core-service-app/src/main/resources/application.yml`: main app configuration
+- `lims-core-service-app/src/main/resources/liquibase`: DB changelogs
 
----
+## 🚀 Running Locally
 
-## 🛠 Running the Application Locally
+From `lims-core-service`:
 
-1. **Clone the repository** and navigate to the project root:
-   ```bash
-   cd e:/2nd year project/durdans-lims/lims-core-service
-   ```
+```bash
+./gradlew clean build
+./gradlew :lims-core-service-app:bootRun
+```
 
-2. **Setup environment properties**
-   The main `application.yml` is committed to Git and uses environment variable placeholders with safe local defaults (e.g., `postgres` / `eta8827`).
-   
-   If you need to use different local credentials (like a different Postgres password) **do not modify `application.yml` directly**. Instead, create a local override file:
-   
-   Create `lims-core-service-app/src/main/resources/application-local.yml`:
-   ```yaml
-   spring:
-     datasource:
-       password: your_custom_local_password
-   ```
-   *(Note: `application-local.yml` is ignored by Git, so your local secrets are safe).*
+Default API base:
 
-3. **Build the application**:
-   ```bash
-   ./gradlew clean build
-   ```
+- `http://localhost:11000`
 
-4. **Run the Spring Boot application**:
-   - To run with default mocked properties:
-     ```bash
-     ./gradlew :lims-core-service-app:bootRun
-     ```
-   - To run utilizing your custom `application-local.yml`:
-     ```bash
-     ./gradlew :lims-core-service-app:bootRun --args='--spring.profiles.active=local'
-     ```
-   *The server will start locally on port `11000`.*
+To run with a local profile:
 
----
+```bash
+./gradlew :lims-core-service-app:bootRun --args='--spring.profiles.active=local'
+```
 
-## 📂 Key Configuration Highlights
+## 🛠 Build Commands
 
-- **Database**: Connects to `durdans_lims_db` via standard JDBC URL configured in `application.yml`. Flyway/Liquibase handles schemas on boot.
-- **S3 Upload Defaults**: PDF and standard Images (png/jpg) are permitted. Max file size is constrained to **10MB**.
-- **Kafka Topics**: JSON-serialized payloads are distributed via the `StringSerializer`/`JsonSerializer` approach for scalable microservice interconnectivity.
+- `./gradlew clean build` - compile + test + package modules
+- `./gradlew :lims-core-service-app:bootRun` - run app module
+- `./gradlew :lims-core-service-app:test` - run app tests
 
----
+## 📘 API Documentation
 
-## 📚 API Documentation
+When the app is running:
 
-Once the application is running, the Open API documentation (Swagger UI) can be accessed to view all exposed endpoints, models, and test API calls:
+- Swagger UI: `http://localhost:11000/swagger-ui.html`
 
-- **Swagger UI**: `http://localhost:11000/swagger-ui.html` (or the equivalent mapped endpoint based on your security configuration)
+## 🔐 Configuration and Security Guidance
+
+- Keep base `application.yml` limited to safe defaults.
+- Store secrets in environment variables or local profile overrides (for example `application-local.yml`, ignored by git).
+- Do not commit real credentials, tokens, or private endpoints.
+- Keep `.gitignore` aligned to exclude local IDE/AI artifacts and environment-specific files.
+
+## 📋 Production Readiness Checklist
+
+- externalize all credentials and sensitive values
+- enforce environment-specific configs (dev/stage/prod)
+- validate migration execution in target environment
+- enable observability (logs, metrics, tracing) and alerting
+- verify role-based access controls for all critical endpoints
+
+## 🩺 Troubleshooting
+
+- **Startup fails on DB connection**: validate datasource URL, user, password, and DB port.
+- **401/403 errors**: verify Keycloak issuer/client/role configuration and JWT validity.
+- **Migration errors**: inspect Liquibase changelog order and applied history.
+- **Kafka-related failures**: verify broker availability and topic configuration.

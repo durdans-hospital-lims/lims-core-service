@@ -9,7 +9,8 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 /**
- * WHY: Aggregates top-level operational metrics to drive dashboard overviews and administrative decisions.
+ * WHY: Aggregates top-level operational metrics to drive dashboard overviews
+ * and administrative decisions.
  */
 @Getter
 @Setter
@@ -18,8 +19,10 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class OrdersBillingStatsResponse {
     private long testOrdersToday;
+    private long pendingPayments;
     private long overduePayments;
     private long partialPayments;
+
     private BigDecimal totalRevenueToday;
     private String trend;
 }

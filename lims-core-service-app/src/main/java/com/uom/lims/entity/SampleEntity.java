@@ -11,9 +11,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -73,4 +71,8 @@ public class SampleEntity extends BaseEntity {
 
     @Column(name = "rejection_notes", length = 500)
     private String rejectionNotes;
+
+    /** Incremented when users confirm specimen barcode label print/reprint (audit trail). */
+    @Column(name = "label_print_count", nullable = false)
+    private int labelPrintCount = 0;
 }

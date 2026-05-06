@@ -29,6 +29,43 @@ public class AuditService {
             String patientCode,
             String details,
             String ipAddress) {
+        fillAndSave(action, entityType, entityId, patientCode, details, ipAddress, null);
+    }
+
+    /**
+     * Persists an audit row in a new transaction (for HTTP handlers that are not already transactional).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void writeStandalone(
+            String action,
+            String entityType,
+            UUID entityId,
+            String patientCode,
+            String details,
+            String ipAddress) {
+        fillAndSave(action, entityType, entityId, patientCode, details, ipAddress, null);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void log(
+            String action,
+            String entityType,
+            UUID entityId,
+            String patientCode,
+            String details,
+            String ipAddress,
+            String branchCodeOverride) {
+        fillAndSave(action, entityType, entityId, patientCode, details, ipAddress, branchCodeOverride);
+    }
+
+    private void fillAndSave(
+            String action,
+            String entityType,
+            UUID entityId,
+            String patientCode,
+            String details,
+            String ipAddress,
+            String branchCodeOverride) {
         AuditLog auditLog = new AuditLog();
         auditLog.setAction(action);
         auditLog.setEntityType(entityType);
@@ -36,17 +73,28 @@ public class AuditService {
         auditLog.setPatientCode(patientCode);
 
         try {
-            String username = SecurityUtils.getCurrentUsername();
-            auditLog.setPerformedBy(username != null ? username : "SYSTEM");
+            String performer = SecurityUtils.getCurrentDisplayName();
+            if (performer == null || performer.isBlank()) {
+                performer = SecurityUtils.getCurrentUsername();
+            }
+            auditLog.setPerformedBy(performer != null && !performer.isBlank() ? performer : "SYSTEM");
         } catch (Exception e) {
             auditLog.setPerformedBy("SYSTEM");
         }
 
         try {
             String branchId = SecurityUtils.getCurrentBranchId();
-            auditLog.setBranchCode(branchId != null ? branchId : "SYSTEM");
+            if (branchCodeOverride != null && !branchCodeOverride.isBlank()) {
+                auditLog.setBranchCode(branchCodeOverride.trim().toUpperCase());
+            } else {
+                auditLog.setBranchCode(branchId != null ? branchId : "SYSTEM");
+            }
         } catch (Exception e) {
-            auditLog.setBranchCode("UNKNOWN");
+            if (branchCodeOverride != null && !branchCodeOverride.isBlank()) {
+                auditLog.setBranchCode(branchCodeOverride.trim().toUpperCase());
+            } else {
+                auditLog.setBranchCode("UNKNOWN");
+            }
         }
 
         auditLog.setIpAddress(ipAddress);

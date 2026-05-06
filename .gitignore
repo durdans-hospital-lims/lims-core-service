@@ -1,11 +1,13 @@
 HELP.md
-.gradle
+
+# Build artifacts
+.gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
 
-### STS ###
+# Eclipse / STS
 .apt_generated
 .classpath
 .factorypath
@@ -17,8 +19,8 @@ bin/
 !**/src/main/**/bin/
 !**/src/test/**/bin/
 
-### IntelliJ IDEA ###
-.idea
+# IntelliJ IDEA\
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -26,20 +28,23 @@ out/
 !**/src/main/**/out/
 !**/src/test/**/out/
 
-### NetBeans ###
+# NetBeans
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
 
-### VS Code ###
+# VS Code
 .vscode/
+.cursor/
+.codex-logs/
 
-### Application Secrets ###
-# Main application.yml should be tracked in Git.
-# Only ignore local override files
-application-local.yml
-application-secret.yml
-application-*.yml
-!application-endpoint.yml
+# Application config / secrets
+# Track only safe base configs. Ignore environment-specific files.
+**/src/main/resources/application-*.yml
+**/src/main/resources/application-*.yaml
+!**/src/main/resources/application.yml
+!**/src/main/resources/application.yaml
+!**/src/main/resources/application-endpoint.yml
+!**/src/main/resources/application-endpoint.yaml
