@@ -40,7 +40,6 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -532,10 +531,18 @@ public class MltTestingService {
 
                 if (numericResult != null) {
                         if (parameter.getRefLow() != null && numericResult.compareTo(parameter.getRefLow()) < 0) {
+                                BigDecimal criticalLow = parameter.getRefLow().multiply(new BigDecimal("0.70"));
+                                if (numericResult.compareTo(criticalLow) < 0) {
+                                        return ResultFlag.CRITICAL_LOW;
+                                }
                                 return ResultFlag.LOW;
                         }
 
                         if (parameter.getRefHigh() != null && numericResult.compareTo(parameter.getRefHigh()) > 0) {
+                                BigDecimal criticalHigh = parameter.getRefHigh().multiply(new BigDecimal("1.30"));
+                                if (numericResult.compareTo(criticalHigh) > 0) {
+                                        return ResultFlag.CRITICAL_HIGH;
+                                }
                                 return ResultFlag.HIGH;
                         }
 
