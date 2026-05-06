@@ -515,6 +515,19 @@ public class MltTestingService {
         }
 
         private ResultFlag resolveResultFlag(ResultItemRequest item, TestParameterEntity parameter) {
+                ResultFlag submittedFlag = null;
+                if (item.flag() != null && !item.flag().isBlank()) {
+                        try {
+                                submittedFlag = ResultFlag.valueOf(item.flag().trim().toUpperCase(Locale.ROOT));
+                        } catch (IllegalArgumentException ex) {
+                                throw new BusinessRuleException("Invalid result flag: " + item.flag());
+                        }
+
+                        if (submittedFlag == ResultFlag.CRITICAL_HIGH || submittedFlag == ResultFlag.CRITICAL_LOW) {
+                                return submittedFlag;
+                        }
+                }
+
                 BigDecimal numericResult = parseNumericResult(item.result());
 
                 if (numericResult != null) {
@@ -531,15 +544,7 @@ public class MltTestingService {
                         }
                 }
 
-                if (item.flag() != null && !item.flag().isBlank()) {
-                        try {
-                                return ResultFlag.valueOf(item.flag().trim().toUpperCase(Locale.ROOT));
-                        } catch (IllegalArgumentException ex) {
-                                throw new BusinessRuleException("Invalid result flag: " + item.flag());
-                        }
-                }
-
-                return null;
+                return submittedFlag;
         }
 
         private BigDecimal parseNumericResult(String resultValue) {
