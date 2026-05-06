@@ -1,0 +1,18 @@
+{
+  "default_branch": "develop",
+  "branches": [
+    "develop",
+    "feature/supervisor-pathologist-workflow-v2",
+    "main"
+  ],
+  "parent": {
+    "develop": null,
+    "feature/supervisor-pathologist-workflow-v2": "develop",
+    "main": "develop"
+  },
+  "order": [
+    "develop",
+    "feature/supervisor-pathologist-workflow-v2",
+    "main"
+  ]
+}

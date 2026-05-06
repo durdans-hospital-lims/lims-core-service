@@ -330,4 +330,39 @@
         </insert>
     </changeSet>
 
+    <changeSet id="20260221183000-6-header-workflow-order" author="kalana">
+        <update tableName="header_mapping">
+            <column name="priority" valueNumeric="10"/>
+            <where>link_url = '/dashboard'</where>
+        </update>
+        <update tableName="header_mapping">
+            <column name="priority" valueNumeric="20"/>
+            <where>link_url = '/orders-billing'</where>
+        </update>
+        <update tableName="header_mapping">
+            <column name="priority" valueNumeric="30"/>
+            <where>link_url = '/phlebotomy'</where>
+        </update>
+        <update tableName="header_mapping">
+            <column name="priority" valueNumeric="40"/>
+            <where>link_url = '/lab-reception'</where>
+        </update>
+        <update tableName="header_mapping">
+            <column name="priority" valueNumeric="50"/>
+            <where>link_url = '/lab-testing'</where>
+        </update>
+        <update tableName="header_mapping">
+            <column name="priority" valueNumeric="60"/>
+            <where>link_url = '/lab-supervision'</where>
+        </update>
+        <update tableName="header_mapping">
+            <column name="priority" valueNumeric="70"/>
+            <where>link_url = '/pathology'</where>
+        </update>
+        <update tableName="header_mapping">
+            <column name="priority" valueNumeric="80"/>
+            <where>link_url = '/report-dispatch'</where>
+        </update>
+    </changeSet>
+
 </databaseChangeLog>
