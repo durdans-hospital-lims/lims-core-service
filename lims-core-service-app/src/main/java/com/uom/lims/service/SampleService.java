@@ -242,11 +242,12 @@ public class SampleService {
                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found with id: " + sampleId));
 
         if (sample.getStatus() != SampleStatus.PENDING_COLLECTION
-                && sample.getStatus() != SampleStatus.COLLECTED) {
+                && sample.getStatus() != SampleStatus.COLLECTED
+                && sample.getStatus() != SampleStatus.RECOLLECTION_REQUIRED) {
             throw new InvalidStateTransitionException(
                     "Cannot reject sample " + sample.getBarcode() +
                             " — current status is " + sample.getStatus() +
-                            ". Only PENDING_COLLECTION or COLLECTED samples can be rejected.");
+                            ". Only PENDING_COLLECTION, COLLECTED, or RECOLLECTION_REQUIRED samples can be rejected.");
         }
 
         // WHY: Free-text justification is mandatory for 'OTHER' to prevent
