@@ -198,10 +198,12 @@ public class VerificationService {
                     fallback,
                     testNamesById.getOrDefault(testId, "UNKNOWN_TEST"),
                     patientNamesById.getOrDefault(patientId, "UNKNOWN_PATIENT"));
-            boolean criticalFinding = testResultRepository.findBySampleId(sample.getId()).stream()
+            List<TestResultEntity> submittedResults = testResultRepository.findBySampleId(sample.getId()).stream()
                     .filter(tr -> !tr.isDeleted())
                     .filter(tr -> !Boolean.TRUE.equals(tr.getDraft()))
-                    .anyMatch(tr -> tr.getFlag() == ResultFlag.CRITICAL_HIGH || tr.getFlag() == ResultFlag.CRITICAL_LOW);
+                    .toList();
+            ResultFlag overallFlag = resolveOverallFlag(submittedResults);
+            boolean criticalFinding = hasCriticalFinding(submittedResults);
             return TestResultSummaryResponse.builder()
                     .resultId(base.getResultId())
                     .status(base.getStatus())
@@ -209,7 +211,7 @@ public class VerificationService {
                     .testType(base.getTestType())
                     .mltName(base.getMltName())
                     .qcStatus(base.getQcStatus())
-                    .flag(null)
+                    .flag(overallFlag == null ? null : overallFlag.name())
                     .priorityLevel(sample.getPriority() == null ? null : sample.getPriority().name())
                     .hasCriticalFinding(criticalFinding)
                     .createdAt(base.getCreatedAt())
@@ -227,8 +229,8 @@ public class VerificationService {
                         .thenComparing(tr -> tr.getParameter().getName(), String.CASE_INSENSITIVE_ORDER))
                 .orElse(pending.get(0));
 
-        boolean hasCriticalFinding = pending.stream()
-                .anyMatch(tr -> tr.getFlag() == ResultFlag.CRITICAL_HIGH || tr.getFlag() == ResultFlag.CRITICAL_LOW);
+        ResultFlag overallFlag = resolveOverallFlag(pending);
+        boolean hasCriticalFinding = hasCriticalFinding(pending);
 
         String aggregateStatus = pending.stream()
                         .anyMatch(tr -> tr.getStatus() == ResultStatus.RETURNED_FOR_RECHECK)
@@ -248,7 +250,7 @@ public class VerificationService {
                 .testType(base.getTestType())
                 .mltName(base.getMltName())
                 .qcStatus(base.getQcStatus())
-                .flag(null)
+                .flag(overallFlag == null ? null : overallFlag.name())
                 .priorityLevel(sample.getPriority() == null ? null : sample.getPriority().name())
                 .hasCriticalFinding(hasCriticalFinding)
                 .createdAt(base.getCreatedAt())
@@ -536,6 +538,20 @@ public class VerificationService {
             case LOW, HIGH -> 1;
             case CRITICAL_LOW, CRITICAL_HIGH -> 2;
         };
+    }
+
+    private ResultFlag resolveOverallFlag(List<TestResultEntity> results) {
+        return results.stream()
+                .map(TestResultEntity::getFlag)
+                .filter(Objects::nonNull)
+                .max(Comparator.comparingInt(this::flagSeverity))
+                .orElse(null);
+    }
+
+    private boolean hasCriticalFinding(List<TestResultEntity> results) {
+        return results.stream()
+                .anyMatch(result -> result.getFlag() == ResultFlag.CRITICAL_HIGH
+                        || result.getFlag() == ResultFlag.CRITICAL_LOW);
     }
 
     private VerificationHistoryItemResponse toHistoryItemResponse(AuditLog auditLog) {
