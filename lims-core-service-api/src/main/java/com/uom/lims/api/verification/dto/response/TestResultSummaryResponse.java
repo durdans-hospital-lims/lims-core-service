@@ -18,7 +18,7 @@ public class TestResultSummaryResponse {
     private String testType;
     private String mltName;
     private String qcStatus;
-    /** Highest-severity result flag among parameters (clinical queue); omitted on supervisor queue rows. */
+    /** Highest-severity result flag among submitted parameters. */
     private String flag;
     /** Specimen / order urgency from accessioning (STAT, URGENT, NORMAL). */
     private String priorityLevel;
