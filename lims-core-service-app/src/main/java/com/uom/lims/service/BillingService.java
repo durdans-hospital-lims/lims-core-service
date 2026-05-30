@@ -19,7 +19,7 @@ import com.uom.lims.repository.BillRepository;
 import com.uom.lims.repository.OrderRepository;
 import com.uom.lims.repository.PaymentRepository;
 import com.uom.lims.repository.TestCatalogRepository;
-import com.uom.lims.util.SecurityUtils;
+import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -49,7 +49,6 @@ public class BillingService {
         private final TestCatalogRepository testCatalogRepository;
         private final PatientClientService patientClientService;
         private final BillingProperties billingProperties;
-        private final SecurityUtils securityUtils;
 
         /**
          * WHY: Fetching a bill by order ID is the primary path from the order detail
@@ -112,7 +111,7 @@ public class BillingService {
                 log.info("Discount {} applied to bill {} by {}",
                                 request.getDiscountAmount(),
                                 bill.getBillNo(),
-                                securityUtils.getCurrentUsername());
+                                SecurityUtils.getCurrentUsername());
                 return toResponse(saved);
         }
 
@@ -179,7 +178,7 @@ public class BillingService {
                 payment.setNotes(request.getNotes());
                 payment.setPaymentDate(Instant.now());
                 payment.setReversed(false);
-                payment.setCreatedBy(securityUtils.getCurrentUsername());
+                payment.setCreatedBy(SecurityUtils.getCurrentUsername());
                 paymentRepository.save(payment);
 
                 // Update bill to PAID
@@ -193,7 +192,7 @@ public class BillingService {
                 log.info("Full payment {} processed for bill {} by {}",
                                 request.getAmount(),
                                 bill.getBillNo(),
-                                securityUtils.getCurrentUsername());
+                                SecurityUtils.getCurrentUsername());
                 return toResponse(saved);
         }
 
@@ -209,7 +208,7 @@ public class BillingService {
 
                 bill.setPrintCount(bill.getPrintCount() + 1);
                 bill.setLastPrintedAt(Instant.now());
-                bill.setLastPrintedBy(securityUtils.getCurrentUsername());
+                bill.setLastPrintedBy(SecurityUtils.getCurrentUsername());
 
                 BillEntity saved = billRepository.save(bill);
                 log.info("Bill {} printed (count: {}) by {}",
@@ -230,7 +229,7 @@ public class BillingService {
                                 : null;
                 PatientResponse patient = patientId != null
                                 ? patientClientService.getPatientByCode(
-                                                patientId, securityUtils.getCurrentBearerToken())
+                                                patientId, SecurityUtils.getCurrentBearerToken())
                                 : null;
 
                 List<OrderItemResponse> itemResponses = bill.getOrder() != null

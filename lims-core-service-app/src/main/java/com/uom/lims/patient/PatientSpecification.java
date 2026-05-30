@@ -65,4 +65,33 @@ public class PatientSpecification {
             return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
         };
     }
+
+    /**
+     * Keyword search (name OR phone) restricted to a branch.
+     *
+     * @param branchScope branch to restrict to; {@code null} means no restriction
+     *                    (granted only to SUPER_ADMIN — callers must derive this
+     *                    from {@code SecurityUtils.resolveBranchScope()}).
+     */
+    public static Specification<PatientEntity> keywordInBranch(String keyword, String branchScope) {
+        return (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (keyword != null && !keyword.isBlank()) {
+                predicates.add(criteriaBuilder.or(
+                        criteriaBuilder.like(
+                                criteriaBuilder.lower(root.get("fullName")),
+                                "%" + keyword.toLowerCase() + "%"),
+                        criteriaBuilder.like(
+                                root.get("phone"),
+                                "%" + keyword + "%")));
+            }
+
+            if (branchScope != null) {
+                predicates.add(criteriaBuilder.equal(root.get("branchCode"), branchScope));
+            }
+
+            return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
+        };
+    }
 }

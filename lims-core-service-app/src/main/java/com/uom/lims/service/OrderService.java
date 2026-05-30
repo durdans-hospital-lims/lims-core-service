@@ -36,7 +36,7 @@ import com.uom.lims.repository.SampleRepository;
 import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.util.ReferenceNumberGenerator;
-import com.uom.lims.util.SecurityUtils;
+import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -83,7 +83,6 @@ public class OrderService {
         private final SampleRepository sampleRepository;
         private final ReferenceNumberGenerator referenceNumberGenerator;
         private final PatientClientService patientClientService;
-        private final SecurityUtils securityUtils;
         private final BillingProperties billingProperties;
         private final TestResultRepository testResultRepository;
         private final ReportDispatchItemRepository dispatchItemRepository;
@@ -103,7 +102,7 @@ public class OrderService {
          */
         public OrderResponse createOrder(OrderCreateRequest request) {
                 log.info("Creating order for patient {} by user {}", request.getPatientId(),
-                                securityUtils.getCurrentUsername());
+                                SecurityUtils.getCurrentUsername());
 
                 // Step 1: Resolve test catalog entries — fail fast if any testId is invalid or
                 // inactive.
@@ -176,7 +175,7 @@ public class OrderService {
                 order.setReferringDepartment(request.getReferringDepartment());
                 order.setRemarks(request.getRemarks());
                 order.setStatus(OrderStatus.PENDING);
-                order.setCreatedBy(securityUtils.getCurrentUsername());
+                order.setCreatedBy(SecurityUtils.getCurrentUsername());
 
                 // Step 4: Build one OrderItemEntity per test, snapshotting the catalog price.
                 List<OrderItemEntity> items = new ArrayList<>();
@@ -186,7 +185,7 @@ public class OrderService {
                         item.setTestId(test.getId());
                         item.setPrice(test.getPrice());
                         item.setStatus(SampleStatus.PENDING_COLLECTION);
-                        item.setCreatedBy(securityUtils.getCurrentUsername());
+                        item.setCreatedBy(SecurityUtils.getCurrentUsername());
                         items.add(item);
                 }
                 order.setItems(items);
@@ -218,7 +217,7 @@ public class OrderService {
                 bill.setTotalAmount(totalAmount);
                 bill.setPaidAmount(BigDecimal.ZERO);
                 bill.setPaymentStatus(PaymentStatus.PENDING);
-                bill.setCreatedBy(securityUtils.getCurrentUsername());
+                bill.setCreatedBy(SecurityUtils.getCurrentUsername());
                 billRepository.save(bill);
 
                 // Step 8: Create one SampleEntity per order item with a unique barcode.
@@ -237,7 +236,7 @@ public class OrderService {
                         sample.setPriority(samplePriority);
                         sample.setStatus(SampleStatus.PENDING_COLLECTION);
                         sample.setRecollectionCount(0);
-                        sample.setCreatedBy(securityUtils.getCurrentUsername());
+                        sample.setCreatedBy(SecurityUtils.getCurrentUsername());
                         sampleRepository.save(sample);
                 }
 
@@ -975,7 +974,7 @@ public class OrderService {
 
                 order.setStatus(OrderStatus.CANCELLED);
                 OrderEntity saved = orderRepository.save(order);
-                log.info("Order {} cancelled by {}", saved.getOrderNo(), securityUtils.getCurrentUsername());
+                log.info("Order {} cancelled by {}", saved.getOrderNo(), SecurityUtils.getCurrentUsername());
                 return toResponse(saved, null);
         }
 
@@ -996,7 +995,7 @@ public class OrderService {
         private OrderResponse toResponse(OrderEntity order, Map<UUID, TestCatalogEntity> testMap) {
                 // Get patient details — graceful null if unavailable
                 PatientResponse patient = patientClientService
-                                .getPatientByCode(order.getPatientId(), securityUtils.getCurrentBearerToken());
+                                .getPatientByCode(order.getPatientId(), SecurityUtils.getCurrentBearerToken());
 
                 List<OrderItemResponse> itemResponses = order.getItems().stream()
                                 .map(item -> {

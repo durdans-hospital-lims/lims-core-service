@@ -19,7 +19,7 @@ import com.uom.lims.repository.BillRepository;
 import com.uom.lims.repository.SampleRepository;
 import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.util.ReferenceNumberGenerator;
-import com.uom.lims.util.SecurityUtils;
+import com.uom.lims.security.SecurityUtils;
 import jakarta.persistence.criteria.JoinType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,7 +54,6 @@ public class SampleService {
     private final TestCatalogRepository testCatalogRepository;
     private final PatientClientService patientClientService;
     private final ReferenceNumberGenerator referenceNumberGenerator;
-    private final SecurityUtils securityUtils;
 
     /**
      * WHY: The phlebotomy worklist only shows samples awaiting initial collection or
@@ -213,7 +212,7 @@ public class SampleService {
 
         sample.setStatus(SampleStatus.COLLECTED);
         sample.setCollectedAt(Instant.now());
-        sample.setCollectedBy(securityUtils.getCurrentUsername());
+        sample.setCollectedBy(SecurityUtils.getCurrentUsername());
 
         SampleEntity saved = sampleRepository.save(sample);
         log.info("Sample {} collected by {}", saved.getBarcode(), saved.getCollectedBy());
@@ -262,7 +261,7 @@ public class SampleService {
         // Mark the original sample as REJECTED.
         sample.setStatus(SampleStatus.REJECTED);
         sample.setRejectedAt(Instant.now());
-        sample.setRejectedBy(securityUtils.getCurrentUsername());
+        sample.setRejectedBy(SecurityUtils.getCurrentUsername());
         sample.setRejectionReason(request.getRejectionReason());
         sample.setRejectionNotes(request.getRejectionNotes());
         SampleEntity rejectedSample = sampleRepository.save(sample);
@@ -279,7 +278,7 @@ public class SampleService {
         recollection.setStatus(SampleStatus.RECOLLECTION_REQUIRED);
         recollection.setParentSample(rejectedSample);
         recollection.setRecollectionCount(rejectedSample.getRecollectionCount() + 1);
-        recollection.setCreatedBy(securityUtils.getCurrentUsername());
+        recollection.setCreatedBy(SecurityUtils.getCurrentUsername());
 
         SampleEntity savedRecollection = sampleRepository.save(recollection);
         log.info("Recollection sample {} created for rejected sample {}",
@@ -394,7 +393,7 @@ public class SampleService {
         }
 
         try {
-            return patientClientService.getPatientByCode(patientId, securityUtils.getCurrentBearerToken());
+            return patientClientService.getPatientByCode(patientId, SecurityUtils.getCurrentBearerToken());
         } catch (Exception e) {
             log.warn("Unable to enrich sample response with patient {} details", patientId, e);
             return null;

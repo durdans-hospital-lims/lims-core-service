@@ -192,9 +192,11 @@ public class PatientController implements PatientApi {
         public DashboardStatisticsResponse getDashboardStatistics(
                         @RequestParam(name = "branchCode", required = false) String branchCode) {
 
-                String effectiveBranchCode = (branchCode == null || branchCode.isBlank())
-                                ? SecurityUtils.getCurrentBranchId()
-                                : branchCode;
+                // Tenant isolation: a SUPER_ADMIN may scope to any branch (or all
+                // when blank); every other user is pinned to their own branch.
+                String effectiveBranchCode = SecurityUtils.isSuperAdmin()
+                                ? ((branchCode == null || branchCode.isBlank()) ? null : branchCode)
+                                : SecurityUtils.getCurrentBranchId();
 
                 return patientService.getDashboardStatistics(effectiveBranchCode);
         }
