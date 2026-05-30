@@ -50,6 +50,16 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Service
 public class VerificationService {
+
+    /**
+     * Self-reference (lazy to avoid a constructor cycle) so bulkVerify can invoke
+     * verifyResult through the Spring proxy — a plain {@code this.verifyResult()}
+     * would bypass AOP and ignore its REQUIRES_NEW transaction boundary.
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private VerificationService self;
+
     private static final String VERIFICATION_ENTITY_TYPE = "VERIFICATION";
     private static final String ACTION_VERIFICATION_APPROVED = "VERIFICATION_APPROVED";
     private static final String ACTION_RETURNED_TO_MLT = "VERIFICATION_RETURNED_TO_MLT";
@@ -355,7 +365,7 @@ public class VerificationService {
         );
     }
 
-    @Transactional
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public TestResultDetailResponse verifyResult(UUID resultId, VerificationRequest request) {
         TestResultEntity anchor = findResultById(resultId);
 
@@ -431,8 +441,8 @@ public class VerificationService {
         for (TestResultEntity result : targets) {
             result.setStatus(ResultStatus.RETURNED_FOR_RECHECK);
             result.setMltNotes(storedNotes);
-            result.setTechnicallyVerifiedBy(username);
-            result.setTechnicallyVerifiedAt(now);
+            // Do NOT stamp technicallyVerifiedBy/At on a reject — the result was
+            // returned, not verified. lastModified captures who/when.
             result.setLastModifiedBy(username);
             result.setLastModifiedAt(now);
             testResultRepository.save(result);
@@ -444,7 +454,14 @@ public class VerificationService {
         return getResultDetails(resultId);
     }
 
-    @Transactional
+    /**
+     * Verifies each result in its own transaction (via the self-proxy so the
+     * REQUIRES_NEW boundary applies). A failure on one result rolls back only
+     * that result and is reported as FAILED; successes are committed and the
+     * returned map is truthful. (Previously the self-invocation shared a single
+     * transaction, so any failure silently rolled back the whole batch while the
+     * response still reported VERIFIED.)
+     */
     public Map<String, String> bulkVerify(BulkVerificationRequest request) {
         Map<String, String> resultMap = new LinkedHashMap<>();
 
@@ -455,7 +472,7 @@ public class VerificationService {
                         .mltNotes(request.getMltNotes())
                         .build();
 
-                verifyResult(resultId, verificationRequest);
+                self.verifyResult(resultId, verificationRequest);
                 resultMap.put(resultIdValue, "VERIFIED");
             } catch (Exception exception) {
                 resultMap.put(resultIdValue, "FAILED: " + exception.getMessage());
