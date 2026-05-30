@@ -533,19 +533,21 @@ public class MltTestingService {
                 BigDecimal numericResult = parseNumericResult(item.result());
 
                 if (numericResult != null) {
-                        if (parameter.getRefLow() != null && numericResult.compareTo(parameter.getRefLow()) < 0) {
-                                BigDecimal criticalLow = parameter.getRefLow().multiply(new BigDecimal("0.70"));
-                                if (numericResult.compareTo(criticalLow) < 0) {
-                                        return ResultFlag.CRITICAL_LOW;
-                                }
-                                return ResultFlag.LOW;
+                        // Panic limits are analyte-specific and configured per parameter
+                        // (NOT inferred as a percentage of the reference interval).
+                        if (parameter.getCriticalLow() != null
+                                        && numericResult.compareTo(parameter.getCriticalLow()) <= 0) {
+                                return ResultFlag.CRITICAL_LOW;
+                        }
+                        if (parameter.getCriticalHigh() != null
+                                        && numericResult.compareTo(parameter.getCriticalHigh()) >= 0) {
+                                return ResultFlag.CRITICAL_HIGH;
                         }
 
+                        if (parameter.getRefLow() != null && numericResult.compareTo(parameter.getRefLow()) < 0) {
+                                return ResultFlag.LOW;
+                        }
                         if (parameter.getRefHigh() != null && numericResult.compareTo(parameter.getRefHigh()) > 0) {
-                                BigDecimal criticalHigh = parameter.getRefHigh().multiply(new BigDecimal("1.30"));
-                                if (numericResult.compareTo(criticalHigh) > 0) {
-                                        return ResultFlag.CRITICAL_HIGH;
-                                }
                                 return ResultFlag.HIGH;
                         }
 
