@@ -106,6 +106,15 @@ app:
   verification:
     base-url: http://localhost:11000
 
+  # Instrument integration (ASTM). Disabled by default so it does not bind a port
+  # without an analyzer/simulator. Enable, then run the simulator's analyzer mode
+  # against this port to demo the machine -> middleware -> LIMS loop.
+  instrument:
+    listener:
+      enabled: false
+      port: 12000
+      instrument-id: ASTM-IN-01
+
 # Observability: liveness/readiness probes + Prometheus metrics. Only health/info
 # are public (see SecurityConfig); everything else under /actuator requires
 # SUPER_ADMIN.

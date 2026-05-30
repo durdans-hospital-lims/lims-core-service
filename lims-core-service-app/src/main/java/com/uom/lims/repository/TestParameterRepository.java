@@ -9,4 +9,8 @@ import java.util.UUID;
 public interface TestParameterRepository extends JpaRepository<TestParameterEntity, UUID> {
 
     List<TestParameterEntity> findByTestIdOrderByDisplayOrderAsc(UUID testId);
+
+    List<TestParameterEntity> findByLoincCode(String loincCode);
+
+    List<TestParameterEntity> findByTestIdAndLoincCode(UUID testId, String loincCode);
 }
