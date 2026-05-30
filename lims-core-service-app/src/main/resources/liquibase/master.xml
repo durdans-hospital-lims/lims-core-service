@@ -29,4 +29,5 @@
     <include file="liquibase/changelog/20260530170000_add_patient_consent.xml"/>
     <include file="liquibase/changelog/20260530180000_create_qc_result.xml"/>
     <include file="liquibase/changelog/20260530190000_add_clinical_signature.xml"/>
+    <include file="liquibase/changelog/20260530200000_create_reference_range.xml"/>
 </databaseChangeLog>
