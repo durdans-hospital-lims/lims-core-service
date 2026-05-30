@@ -375,12 +375,15 @@ public class MltTestingService {
                                 .distinct()
                                 .toList();
 
-                Map<String, String> patientNameByCode = patientRepository.findAll().stream()
-                                .filter(patient -> patientCodes.contains(patient.getPatientCode()))
-                                .collect(Collectors.toMap(
-                                                PatientEntity::getPatientCode,
-                                                PatientEntity::getFullName,
-                                                (existing, replacement) -> existing));
+                // Look up only the patients referenced by this page of samples
+                // (was findAll() — loaded every patient across all branches).
+                Map<String, String> patientNameByCode = patientCodes.isEmpty()
+                                ? java.util.Map.of()
+                                : patientRepository.findByPatientCodeIn(patientCodes).stream()
+                                                .collect(Collectors.toMap(
+                                                                PatientEntity::getPatientCode,
+                                                                PatientEntity::getFullName,
+                                                                (existing, replacement) -> existing));
 
                 return samples.stream()
                                 .map(sample -> {
