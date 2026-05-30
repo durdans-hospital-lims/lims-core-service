@@ -65,8 +65,10 @@ public class SampleService {
      */
     @Transactional(readOnly = true)
     public Page<SampleResponse> getPendingSamples(Pageable pageable) {
-        return sampleRepository.findAllByStatusInAndDeletedFalse(
-                        List.of(SampleStatus.PENDING_COLLECTION, SampleStatus.RECOLLECTION_REQUIRED), pageable)
+        // Tenant isolation: branch users see only their branch's queue.
+        return sampleRepository.findByStatusInAndBranch(
+                        List.of(SampleStatus.PENDING_COLLECTION, SampleStatus.RECOLLECTION_REQUIRED),
+                        SecurityUtils.resolveBranchScope(), pageable)
                 .map(this::toResponse);
     }
 
@@ -130,11 +132,12 @@ public class SampleService {
         // WHY: We query all collection outcomes plus recollection requests.
         // Using findAll with status filter and mapping these statuses as history is the
         // simplest approach given the current repository contract.
-        Page<SampleEntity> history = sampleRepository.findHistoryForStatuses(
+        Page<SampleEntity> history = sampleRepository.findHistoryForStatusesInBranch(
                         List.of(
                                 SampleStatus.COLLECTED,
                                 SampleStatus.REJECTED,
                                 SampleStatus.RECOLLECTION_REQUIRED),
+                        SecurityUtils.resolveBranchScope(),
                         pageable);
         return history.map(this::toHistoryResponse);
     }

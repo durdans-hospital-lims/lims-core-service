@@ -362,7 +362,9 @@ public class MltTestingService {
 
         @Transactional(readOnly = true)
         public List<MltAllWorklistItemResponse> getAllWorklist() {
-                List<SampleEntity> samples = sampleRepository.findAllMltWorklistSamples();
+                // Tenant isolation: MLT worklist scoped to the caller's branch.
+                List<SampleEntity> samples = sampleRepository.findAllMltWorklistSamplesInBranch(
+                                SecurityUtils.resolveBranchScope());
 
                 List<UUID> testIds = samples.stream()
                                 .map(sample -> sample.getOrderItem().getTestId())
