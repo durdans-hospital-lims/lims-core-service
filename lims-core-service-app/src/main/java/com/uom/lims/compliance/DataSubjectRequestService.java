@@ -10,8 +10,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Sri Lanka PDPA data-subject-request handling: consent capture, the right of
@@ -64,6 +67,36 @@ public class DataSubjectRequestService {
         if (p.isAnonymized()) {
             return;
         }
+        redact(p);
+        patientRepository.save(p);
+        auditService.log("PDPA_ERASURE", "PATIENT", p.getId(), patientCode,
+                String.format("{\"reason\":\"%s\"}", reason == null ? "" : reason), ipAddress);
+        log.info("Patient {} anonymised under right-to-erasure", patientCode);
+    }
+
+    /**
+     * Retention enforcement: anonymise soft-deleted patient records whose retention
+     * window has elapsed. Called by the scheduled retention job.
+     */
+    @Transactional
+    public int anonymizeExpired(int retentionDays) {
+        Instant cutoff = Instant.now().minus(Duration.ofDays(retentionDays));
+        List<PatientEntity> expired =
+                patientRepository.findByDeletedTrueAndAnonymizedFalseAndLastModifiedAtBefore(cutoff);
+        for (PatientEntity p : expired) {
+            redact(p);
+            patientRepository.save(p);
+            auditService.log("PDPA_RETENTION_ANONYMIZED", "PATIENT", p.getId(), p.getPatientCode(),
+                    String.format("{\"retentionDays\":%d}", retentionDays), "0.0.0.0");
+        }
+        if (!expired.isEmpty()) {
+            log.info("Retention: anonymised {} expired patient record(s)", expired.size());
+        }
+        return expired.size();
+    }
+
+    /** De-identify PII in place. Phone is unique+not-null so it gets a stable placeholder. */
+    private void redact(PatientEntity p) {
         p.setFullName("REDACTED");
         p.setEmail(null);
         p.setPhone("ANON-" + p.getPatientCode());
@@ -74,16 +107,11 @@ public class DataSubjectRequestService {
         p.setContactPersonName(null);
         p.setContactPersonPhone(null);
         p.setProfilePhotoPath(null);
-        // De-identify DOB to birth year only.
         if (p.getDob() != null) {
-            p.setDob(LocalDate.of(p.getDob().getYear(), 1, 1));
+            p.setDob(LocalDate.of(p.getDob().getYear(), 1, 1)); // de-identify DOB to birth year
         }
         p.setAnonymized(true);
         p.setDeleted(true);
-        patientRepository.save(p);
-        auditService.log("PDPA_ERASURE", "PATIENT", p.getId(), patientCode,
-                String.format("{\"reason\":\"%s\"}", reason == null ? "" : reason), ipAddress);
-        log.info("Patient {} anonymised under right-to-erasure", patientCode);
     }
 
     private PatientEntity require(String patientCode) {

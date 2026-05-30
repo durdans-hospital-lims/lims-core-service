@@ -39,6 +39,9 @@ public interface PatientRepository
 
         java.util.List<PatientEntity> findByPatientCodeIn(java.util.Collection<String> patientCodes);
 
+        /** Soft-deleted, not-yet-anonymised patients whose retention window has elapsed. */
+        java.util.List<PatientEntity> findByDeletedTrueAndAnonymizedFalseAndLastModifiedAtBefore(Instant cutoff);
+
         Page<PatientEntity> findByFullNameContainingIgnoreCaseOrPhoneContaining(
                         String fullName,
                         String phone,
