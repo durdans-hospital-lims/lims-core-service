@@ -28,9 +28,10 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
-                        .requestMatchers("/actuator/**").permitAll()
-                        .requestMatchers("/test/**").permitAll()
+                        // Public endpoints — only liveness/readiness probes are open;
+                        // every other actuator endpoint requires SUPER_ADMIN.
+                        .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                        .requestMatchers("/actuator/**").hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/v1/patients/verify-email").permitAll()
                         .requestMatchers("/email-verification-success.html", "/email-verification-error.html")
                         .permitAll()

@@ -79,11 +79,14 @@ public class PatientService {
                 patient.setAddress(request.getAddress());
                 patient.setContactPersonPhone(request.getContactPersonPhone());
 
-                // Set Branch Code (from request or fallback to current user's branch)
-                String branchCode = request.getBranchCode();
-                if (branchCode == null || branchCode.isBlank() || "BR001".equals(branchCode)) {
-                        branchCode = SecurityUtils.getCurrentBranchId();
-                }
+                // Branch is derived from the authenticated user so a branch user
+                // can only register patients into their own branch. A SUPER_ADMIN
+                // may register into an explicitly requested branch.
+                String branchCode = (SecurityUtils.isSuperAdmin()
+                                && request.getBranchCode() != null
+                                && !request.getBranchCode().isBlank())
+                                                ? request.getBranchCode()
+                                                : SecurityUtils.getCurrentBranchId();
                 patient.setBranchCode(branchCode);
 
                 // Save
@@ -125,6 +128,14 @@ public class PatientService {
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Patient not found with code: " + patientCode));
 
+                // Tenant isolation: a branch user must not read another branch's
+                // patient. Return not-found (not 403) so cross-branch existence is
+                // not revealed by enumeration.
+                if (SecurityUtils.isAuthenticated()
+                                && !SecurityUtils.canAccessBranch(patient.getBranchCode())) {
+                        throw new ResourceNotFoundException("Patient not found with code: " + patientCode);
+                }
+
                 return mapToPatientResponse(patient);
         }
 
@@ -140,10 +151,12 @@ public class PatientService {
 
                 Pageable pageable = PageRequest.of(page, size, sort);
 
-                Page<PatientEntity> patients = patientRepository.findByFullNameContainingIgnoreCaseOrPhoneContaining(
-                                keyword,
-                                keyword,
-                                pageable);
+                // Tenant isolation: restrict to the caller's branch (all branches
+                // only for SUPER_ADMIN). resolveBranchScope() fails closed.
+                Specification<PatientEntity> specification = PatientSpecification.keywordInBranch(
+                                keyword, SecurityUtils.resolveBranchScope());
+
+                Page<PatientEntity> patients = patientRepository.findAll(specification, pageable);
 
                 return patients.map(this::mapToPatientResponse);
         }
@@ -166,12 +179,18 @@ public class PatientService {
 
                 Pageable pageable = PageRequest.of(page, size, sort);
 
+                // Tenant isolation: non-super-admins are pinned to their own
+                // branch and any client-supplied branchCode is ignored; a
+                // SUPER_ADMIN may filter by the requested branchCode (or all).
+                String scope = SecurityUtils.resolveBranchScope();
+                String effectiveBranch = (scope == null) ? branchCode : scope;
+
                 Specification<PatientEntity> specification = PatientSpecification.filterPatients(
                                 fullName,
                                 phone,
                                 identityNumber,
                                 email,
-                                branchCode,
+                                effectiveBranch,
                                 phoneVerified,
                                 emailVerified);
 

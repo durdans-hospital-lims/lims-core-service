@@ -53,7 +53,7 @@ public class PatientDocumentService {
             uploadedBy = "System";
         }
 
-        // 1️⃣ Validate file
+        // Validate file
         if (file.isEmpty()) {
             log.warn("Empty file upload attempt for patient: {}", patientCode);
             throw new InvalidRequestException("File cannot be empty");
@@ -76,7 +76,7 @@ public class PatientDocumentService {
         validateContentTypeMatchesExtension(file);
         validateFileSignature(file);
 
-        // 2️⃣ Find patient
+        // Find patient
         PatientEntity patient = patientRepository
                 .findByPatientCode(patientCode)
                 .orElseThrow(() -> {
@@ -95,11 +95,11 @@ public class PatientDocumentService {
                     "Branch information not found in token");
         }
 
-        // 3️⃣ Generate file hash
+        //  Generate file hash
         String fileHash = generateSHA256Hash(file);
         log.debug("Generated file hash: {}", fileHash);
 
-        // 4️⃣ Check for duplicates (per patient)
+        //  Check for duplicates (per patient)
         if (documentRepository.existsByPatientAndFileHash(patient, fileHash)) {
             log.warn("Duplicate file upload attempt by patient: {}, hash: {}",
                     patientCode, fileHash);
@@ -107,11 +107,11 @@ public class PatientDocumentService {
                     "This file has already been uploaded for this patient");
         }
 
-        // 5️⃣ Upload to S3
+        //  Upload to S3
         String s3Key = storageService.uploadFile(patientCode, documentType, file);
         log.info("File uploaded to S3 with key: {}", s3Key);
 
-        // 6️⃣ Save metadata
+        //  Save metadata
         PatientDocumentEntity document = new PatientDocumentEntity();
         document.setPatient(patient);
         document.setDocumentType(documentType);
@@ -131,7 +131,7 @@ public class PatientDocumentService {
 
         log.info("Document saved successfully with ID: {}", saved.getId());
 
-        // 📢 Audit Log
+        //  Audit Log
         auditService.log(
                 "UPLOAD_DOCUMENT",
                 "PATIENT_DOCUMENT",

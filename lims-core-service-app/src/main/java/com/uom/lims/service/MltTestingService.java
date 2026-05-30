@@ -28,7 +28,7 @@ import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.patient.PatientRepository;
 import com.uom.lims.patient.PatientEntity;
 import com.uom.lims.exception.ResourceNotFoundException;
-import com.uom.lims.util.SecurityUtils;
+import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,7 +65,6 @@ public class MltTestingService {
         private final TestResultRepository resultRepository;
         private final TestCatalogRepository testCatalogRepository;
         private final PatientRepository patientRepository;
-        private final SecurityUtils securityUtils;
         private final AuditService auditService;
         private final AuditLogRepository auditLogRepository;
         private final ObjectMapper objectMapper;
@@ -473,7 +472,7 @@ public class MltTestingService {
                 sample.setRejectionReason(request.getRejectionReason());
                 sample.setRejectionNotes(request.getRejectionNotes());
                 sample.setRejectedAt(Instant.now());
-                sample.setRejectedBy(securityUtils.getCurrentUsername());
+                sample.setRejectedBy(SecurityUtils.getCurrentUsername());
 
                 sampleRepository.save(sample);
 
