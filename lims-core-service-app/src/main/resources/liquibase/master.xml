@@ -27,4 +27,5 @@
     <include file="liquibase/changelog/20260530150000_add_bill_discount_audit.xml"/>
     <include file="liquibase/changelog/20260530160000_add_loinc_and_numeric_results.xml"/>
     <include file="liquibase/changelog/20260530170000_add_patient_consent.xml"/>
+    <include file="liquibase/changelog/20260530180000_create_qc_result.xml"/>
 </databaseChangeLog>
