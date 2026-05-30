@@ -87,7 +87,8 @@ public class InstrumentResultIngestionService {
             result.setStatus(ResultStatus.ENTERED);
 
             // Autoverification: auto-release normal numeric results; hold the rest.
-            AutoverificationService.Decision decision = autoverificationService.decide(result);
+            BigDecimal prior = priorNumeric(sample, parameter.getId());
+            AutoverificationService.Decision decision = autoverificationService.decide(result, prior);
             if (decision.autoVerify()) {
                 result.setStatus(ResultStatus.TECHNICALLY_VERIFIED);
                 result.setTechnicallyVerifiedBy(AUTO_VERIFIER);
@@ -114,6 +115,14 @@ public class InstrumentResultIngestionService {
         }
 
         return new IngestOutcome(specimen.sampleId(), ingested, unmatched);
+    }
+
+    /** The patient's most recent prior numeric result for this parameter, for delta checks. */
+    private BigDecimal priorNumeric(SampleEntity sample, UUID parameterId) {
+        String patientId = sample.getOrderItem().getOrder().getPatientId();
+        List<TestResultEntity> prior = resultRepository.findPriorNumericResults(
+                patientId, parameterId, sample.getId(), org.springframework.data.domain.PageRequest.of(0, 1));
+        return prior.isEmpty() ? null : prior.get(0).getResultNumeric();
     }
 
     private TestParameterEntity resolveParameter(UUID testId, String deviceCode) {

@@ -91,4 +91,25 @@ public interface TestResultRepository extends JpaRepository<TestResultEntity, UU
             @Param("sampleId") UUID sampleId,
             @Param("currentVisitAt") Instant currentVisitAt
     );
+
+    /** Prior numeric results for the same patient + parameter, most recent first (for delta checks). */
+    @Query("""
+            select tr
+            from TestResultEntity tr
+            join tr.sample s
+            join s.orderItem oi
+            join oi.order o
+            where o.patientId = :patientId
+              and tr.parameter.id = :parameterId
+              and s.id <> :sampleId
+              and tr.resultNumeric is not null
+              and tr.deleted = false
+              and s.deleted = false
+            order by coalesce(tr.technicallyVerifiedAt, s.collectedAt, tr.createdAt) desc
+            """)
+    List<TestResultEntity> findPriorNumericResults(
+            @Param("patientId") String patientId,
+            @Param("parameterId") UUID parameterId,
+            @Param("sampleId") UUID sampleId,
+            org.springframework.data.domain.Pageable pageable);
 }
