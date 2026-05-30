@@ -74,6 +74,10 @@ public class TestResultEntity extends BaseEntity {
     @Column(name = "clinically_authorized_at")
     private Instant clinicallyAuthorizedAt;
 
+    /** Electronic-signature manifestation captured at authorization (who/when/meaning). */
+    @Column(name = "clinical_signature", length = 255)
+    private String clinicalSignature;
+
     @Column(name = "returned_by", length = 255)
     private String returnedBy;
 
