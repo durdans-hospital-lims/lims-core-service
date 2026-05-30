@@ -436,7 +436,10 @@ public class PatientService {
                 patient.setEmailVerificationExpiry(LocalDateTime.now().plusHours(24));
                 patient.setLastVerificationSentAt(LocalDateTime.now());
 
-                emailService.sendVerificationEmail(patient.getEmail(), patient.getFullName(), rawToken);
+                // Send after commit (raw token lives only in the event, not the DB).
+                applicationEventPublisher.publishEvent(
+                                new com.uom.lims.notification.EmailVerificationRequestedEvent(
+                                                patient.getEmail(), patient.getFullName(), rawToken));
         }
 
         @Transactional
@@ -561,7 +564,10 @@ public class PatientService {
 
                 patientRepository.save(patient);
 
-                smsService.sendSms(patient.getPhone(), "Your verification OTP is: " + rawOtp);
+                // Send after commit so a rollback never leaves a live OTP for an
+                // uncommitted state, and SMS latency never pins the transaction.
+                applicationEventPublisher.publishEvent(
+                                new com.uom.lims.notification.PhoneOtpRequestedEvent(patient.getPhone(), rawOtp));
 
                 auditService.log(
                                 "SEND_PHONE_OTP",
