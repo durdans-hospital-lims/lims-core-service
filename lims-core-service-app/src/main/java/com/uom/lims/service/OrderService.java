@@ -32,6 +32,7 @@ import com.uom.lims.exception.InvalidStateTransitionException;
 import com.uom.lims.exception.ResourceNotFoundException;
 import com.uom.lims.repository.BillRepository;
 import com.uom.lims.repository.OrderRepository;
+import com.uom.lims.repository.OrderSpecifications;
 import com.uom.lims.repository.SampleRepository;
 import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.repository.TestResultRepository;
@@ -41,6 +42,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -176,6 +178,8 @@ public class OrderService {
                 order.setRemarks(request.getRemarks());
                 order.setStatus(OrderStatus.PENDING);
                 order.setCreatedBy(SecurityUtils.getCurrentUsername());
+                // Stamp the owning branch so order/bill reads can be tenant-scoped.
+                order.setBranchCode(SecurityUtils.getCurrentBranchId());
 
                 // Step 4: Build one OrderItemEntity per test, snapshotting the catalog price.
                 List<OrderItemEntity> items = new ArrayList<>();
@@ -273,11 +277,12 @@ public class OrderService {
         @Transactional
         public Page<OrderResponse> getOrders(Pageable pageable, String patientId) {
                 String normalizedPatientId = patientId == null ? null : patientId.trim();
-                Page<OrderEntity> orders = normalizedPatientId == null || normalizedPatientId.isBlank()
-                                ? orderRepository.findAllByDeletedFalse(pageable)
-                                : orderRepository.findAllByPatientIdAndDeletedFalse(normalizedPatientId, pageable);
-                // WHY: Spring Data JPA derivation — findAllByDeletedFalse scopes out
-                // soft-deleted records.
+                // Tenant isolation: restrict to the caller's branch (all branches only
+                // for SUPER_ADMIN). resolveBranchScope() fails closed.
+                Specification<OrderEntity> spec = OrderSpecifications.notDeleted()
+                                .and(OrderSpecifications.forPatient(normalizedPatientId))
+                                .and(OrderSpecifications.inBranch(SecurityUtils.resolveBranchScope()));
+                Page<OrderEntity> orders = orderRepository.findAll(spec, pageable);
                 return orders
                                 .map(order -> {
                                         reconcileOrderCompletionFromDispatch(order);
@@ -293,6 +298,18 @@ public class OrderService {
         }
 
         /**
+         * Tenant isolation guard for a single order: a non-super-admin may only
+         * read an order in their own branch. Cross-branch access is reported as
+         * not-found so order existence is not revealed by enumeration.
+         */
+        private void assertBranchAccess(OrderEntity order) {
+                if (!SecurityUtils.canAccessBranch(order.getBranchCode())) {
+                        throw new ResourceNotFoundException(
+                                        "Order not found with id: " + order.getId());
+                }
+        }
+
+        /**
          * WHY: Lookup by UUID is the primary retrieval path. Using UUID prevents
          * sequential ID enumeration.
          *
@@ -304,6 +321,7 @@ public class OrderService {
         public OrderResponse getOrderById(UUID id) {
                 OrderEntity order = orderRepository.findByIdAndDeletedFalse(id)
                                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
+                assertBranchAccess(order);
                 reconcileOrderCompletionFromDispatch(order);
 
                 // Fetch test catalog for enrichment
@@ -320,6 +338,7 @@ public class OrderService {
         public OrderTrackingResponse getOrderTracking(UUID id) {
                 OrderEntity order = orderRepository.findByIdAndDeletedFalse(id)
                                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
+                assertBranchAccess(order);
                 reconcileOrderCompletionFromDispatch(order);
 
                 List<UUID> testIds = order.getItems().stream()

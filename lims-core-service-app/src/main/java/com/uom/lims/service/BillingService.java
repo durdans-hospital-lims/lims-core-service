@@ -60,7 +60,19 @@ public class BillingService {
                 BillEntity bill = billRepository.findByOrderIdAndDeletedFalse(orderId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Bill not found for order id: " + orderId));
+                assertBranchAccess(bill);
                 return toResponse(bill);
+        }
+
+        /**
+         * Tenant isolation: a non-super-admin may only act on a bill whose owning
+         * order is in their branch. Cross-branch access is reported as not-found.
+         */
+        private void assertBranchAccess(BillEntity bill) {
+                String branch = bill.getOrder() != null ? bill.getOrder().getBranchCode() : null;
+                if (!SecurityUtils.canAccessBranch(branch)) {
+                        throw new ResourceNotFoundException("Bill not found");
+                }
         }
 
         /**
@@ -72,6 +84,7 @@ public class BillingService {
                 BillEntity bill = billRepository.findById(billId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Bill not found with id: " + billId));
+                assertBranchAccess(bill);
                 return toResponse(bill);
         }
 
@@ -85,6 +98,7 @@ public class BillingService {
                 BillEntity bill = billRepository.findById(billId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Bill not found with id: " + billId));
+                assertBranchAccess(bill);
 
                 if (bill.getPaymentStatus() == PaymentStatus.PAID) {
                         throw new BusinessValidationException(
@@ -125,6 +139,7 @@ public class BillingService {
                 BillEntity bill = billRepository.findById(billId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Bill not found with id: " + billId));
+                assertBranchAccess(bill);
 
                 // Validate bill is not already paid
                 if (bill.getPaymentStatus() == PaymentStatus.PAID) {
@@ -205,6 +220,7 @@ public class BillingService {
                 BillEntity bill = billRepository.findById(billId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Bill not found with id: " + billId));
+                assertBranchAccess(bill);
 
                 bill.setPrintCount(bill.getPrintCount() + 1);
                 bill.setLastPrintedAt(Instant.now());

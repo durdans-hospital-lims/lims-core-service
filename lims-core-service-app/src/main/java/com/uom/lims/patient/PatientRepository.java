@@ -37,6 +37,8 @@ public interface PatientRepository
 
         Optional<PatientEntity> findByPatientCode(String patientCode);
 
+        java.util.List<PatientEntity> findByPatientCodeIn(java.util.Collection<String> patientCodes);
+
         Page<PatientEntity> findByFullNameContainingIgnoreCaseOrPhoneContaining(
                         String fullName,
                         String phone,
