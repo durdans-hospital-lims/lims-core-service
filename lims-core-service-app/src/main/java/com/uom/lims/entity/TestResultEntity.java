@@ -32,6 +32,16 @@ public class TestResultEntity extends BaseEntity {
     @Column(name = "result_value", nullable = false, length = 100)
     private String resultValue;
 
+    /** Parsed numeric value (when the result is numeric) so results can be
+     * indexed, range-queried, trended and delta-checked without string parsing.
+     * Null for qualitative/text results. */
+    @Column(name = "result_numeric", precision = 14, scale = 4)
+    private java.math.BigDecimal resultNumeric;
+
+    /** NUMERIC | QUALITATIVE | TEXT — discriminates the result value type. */
+    @Column(name = "result_data_type", length = 16)
+    private String resultDataType;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "flag", length = 30)
     private ResultFlag flag;

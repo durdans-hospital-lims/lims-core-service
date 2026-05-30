@@ -216,6 +216,11 @@ public class MltTestingService {
                         result.setSample(sample);
                         result.setParameter(parameter);
                         result.setResultValue(item.result());
+                        // Capture the numeric form (when parseable) for indexing/trending/delta,
+                        // and discriminate the value type.
+                        BigDecimal numericValue = parseNumericResult(item.result());
+                        result.setResultNumeric(numericValue);
+                        result.setResultDataType(numericValue != null ? "NUMERIC" : "TEXT");
                         result.setMltNotes(request.mltNotes());
                         result.setDraft(isDraft);
                         result.setFlag(resolveResultFlag(item, parameter));
