@@ -3,6 +3,7 @@ package com.uom.lims.instrument;
 import com.uom.lims.api.enums.ResultFlag;
 import com.uom.lims.api.enums.SampleStatus;
 import com.uom.lims.api.verification.enums.ResultStatus;
+import com.uom.lims.autoverification.AutoverificationService;
 import com.uom.lims.entity.SampleEntity;
 import com.uom.lims.entity.TestParameterEntity;
 import com.uom.lims.entity.TestResultEntity;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,10 +35,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class InstrumentResultIngestionService {
 
+    private static final String AUTO_VERIFIER = "AUTO-VERIFY";
+
     private final SampleRepository sampleRepository;
     private final TestParameterRepository parameterRepository;
     private final TestResultRepository resultRepository;
     private final OutboxService outboxService;
+    private final AutoverificationService autoverificationService;
 
     @Transactional
     public IngestOutcome ingest(AstmMessage.SpecimenResults specimen, String instrumentId) {
@@ -50,6 +55,7 @@ public class InstrumentResultIngestionService {
         UUID testId = sample.getOrderItem().getTestId();
         int ingested = 0;
         int unmatched = 0;
+        boolean allAutoVerified = true;
 
         for (AstmMessage.Result r : specimen.results()) {
             TestParameterEntity parameter = resolveParameter(testId, r.deviceCode());
@@ -79,13 +85,25 @@ public class InstrumentResultIngestionService {
             result.setFlag(mapFlag(r.flag()));
             result.setDraft(false);
             result.setStatus(ResultStatus.ENTERED);
+
+            // Autoverification: auto-release normal numeric results; hold the rest.
+            AutoverificationService.Decision decision = autoverificationService.decide(result);
+            if (decision.autoVerify()) {
+                result.setStatus(ResultStatus.TECHNICALLY_VERIFIED);
+                result.setTechnicallyVerifiedBy(AUTO_VERIFIER);
+                result.setTechnicallyVerifiedAt(Instant.now());
+            } else {
+                allAutoVerified = false;
+            }
             resultRepository.save(result);
             ingested++;
         }
 
         if (ingested > 0 && (sample.getStatus() == SampleStatus.ACCEPTED
                 || sample.getStatus() == SampleStatus.IN_TESTING)) {
-            sample.setStatus(SampleStatus.SENT_FOR_VERIFICATION);
+            // All auto-released -> ready for clinical authorization; otherwise the
+            // sample goes to the supervisor's verification queue.
+            sample.setStatus(allAutoVerified ? SampleStatus.VERIFIED : SampleStatus.SENT_FOR_VERIFICATION);
             sampleRepository.save(sample);
         }
 
