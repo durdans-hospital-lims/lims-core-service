@@ -25,4 +25,5 @@
     <include file="liquibase/changelog/20260530130000_add_parameter_critical_limits.xml"/>
     <include file="liquibase/changelog/20260530140000_create_outbox.xml"/>
     <include file="liquibase/changelog/20260530150000_add_bill_discount_audit.xml"/>
+    <include file="liquibase/changelog/20260530160000_add_loinc_and_numeric_results.xml"/>
 </databaseChangeLog>

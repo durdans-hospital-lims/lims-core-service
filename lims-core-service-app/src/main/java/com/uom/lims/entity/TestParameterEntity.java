@@ -24,6 +24,14 @@ public class TestParameterEntity extends BaseEntity {
     @Column(name = "unit", length = 50)
     private String unit;
 
+    /** LOINC code for this resultable parameter (interoperability: HL7/FHIR). */
+    @Column(name = "loinc_code", length = 20)
+    private String loincCode;
+
+    /** UCUM-coded unit (machine-readable unit for conversion/exchange). */
+    @Column(name = "ucum_unit", length = 32)
+    private String ucumUnit;
+
     @Column(name = "ref_low", precision = 10, scale = 2)
     private BigDecimal refLow;
 
