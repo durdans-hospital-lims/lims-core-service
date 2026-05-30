@@ -120,4 +120,19 @@ public class PatientEntity extends BaseEntity {
 
     @Column(name = "branch_code")
     private String branchCode;
+
+    // --- PDPA (Sri Lanka) ---
+    /** Consent to process the patient's (special-category) health data. */
+    @Column(name = "consent_given", nullable = false)
+    private boolean consentGiven = false;
+
+    @Column(name = "consent_at")
+    private LocalDateTime consentAt;
+
+    @Column(name = "consent_version", length = 32)
+    private String consentVersion;
+
+    /** Set true after a right-to-erasure request anonymises this record. */
+    @Column(name = "anonymized", nullable = false)
+    private boolean anonymized = false;
 }
