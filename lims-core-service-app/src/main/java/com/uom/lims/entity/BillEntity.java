@@ -49,6 +49,16 @@ public class BillEntity extends BaseEntity {
     @Column(name = "discount")
     private BigDecimal discount = BigDecimal.ZERO;
 
+    /** Mandatory rationale + approver + time for a discount (financial audit trail). */
+    @Column(name = "discount_reason", length = 500)
+    private String discountReason;
+
+    @Column(name = "discount_by")
+    private String discountBy;
+
+    @Column(name = "discount_at")
+    private Instant discountAt;
+
     @Column(name = "total_amount", nullable = false)
     private BigDecimal totalAmount;
 

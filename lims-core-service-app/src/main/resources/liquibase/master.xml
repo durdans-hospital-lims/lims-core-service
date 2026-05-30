@@ -24,4 +24,5 @@
     <include file="liquibase/changelog/20260530120000_add_order_branch_code.xml"/>
     <include file="liquibase/changelog/20260530130000_add_parameter_critical_limits.xml"/>
     <include file="liquibase/changelog/20260530140000_create_outbox.xml"/>
+    <include file="liquibase/changelog/20260530150000_add_bill_discount_audit.xml"/>
 </databaseChangeLog>

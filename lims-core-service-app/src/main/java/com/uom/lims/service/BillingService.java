@@ -114,6 +114,10 @@ public class BillingService {
                 }
 
                 bill.setDiscount(request.getDiscountAmount());
+                // Persist the mandatory rationale + approver + time (financial audit).
+                bill.setDiscountReason(request.getReason());
+                bill.setDiscountBy(SecurityUtils.getCurrentUsername());
+                bill.setDiscountAt(Instant.now());
                 // WHY: Recalculate from source values to prevent compounding errors
                 // if applyDiscount is called multiple times
                 bill.setTotalAmount(
