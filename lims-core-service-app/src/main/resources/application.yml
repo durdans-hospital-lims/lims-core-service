@@ -115,6 +115,16 @@ app:
       port: 12000
       instrument-id: ASTM-IN-01
 
+  # Admin user management via the Keycloak Admin API (server-to-server). Disabled
+  # by default so the app starts without admin service-account credentials.
+  # Requires a confidential client with a service account + realm-management roles.
+  keycloak-admin:
+    enabled: false
+    server-url: ${KEYCLOAK_URL:http://localhost:8081}
+    realm: ${KEYCLOAK_REALM:lims-realm}
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:lims-admin-cli}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:}
+
 # Observability: liveness/readiness probes + Prometheus metrics. Only health/info
 # are public (see SecurityConfig); everything else under /actuator requires
 # SUPER_ADMIN.

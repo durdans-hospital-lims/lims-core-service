@@ -38,6 +38,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'io.micrometer:micrometer-registry-prometheus'
 
+    // Admin: Keycloak user/role management (server-to-server via service account)
+    implementation 'org.keycloak:keycloak-admin-client:24.0.5'
+
 
     // Test dependencies
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
