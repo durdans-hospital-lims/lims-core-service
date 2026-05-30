@@ -30,6 +30,15 @@ public class TestParameterEntity extends BaseEntity {
     @Column(name = "ref_high", precision = 10, scale = 2)
     private BigDecimal refHigh;
 
+    /** Panic limits: a value at/below criticalLow or at/above criticalHigh is a
+     * critical (panic) result. Analyte-specific — NOT derived from the reference
+     * interval. Null means no defined critical limit for that direction. */
+    @Column(name = "critical_low", precision = 10, scale = 2)
+    private BigDecimal criticalLow;
+
+    @Column(name = "critical_high", precision = 10, scale = 2)
+    private BigDecimal criticalHigh;
+
     @Column(name = "display_order")
     private Integer displayOrder;
 }

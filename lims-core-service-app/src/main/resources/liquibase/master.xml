@@ -22,4 +22,5 @@
     <include file="liquibase/changelog/20260505100000_add_dispatch_tracking_columns.xml"/>
     <include file="liquibase/changelog/20260505200000_label_print_and_supplies.xml"/>
     <include file="liquibase/changelog/20260530120000_add_order_branch_code.xml"/>
+    <include file="liquibase/changelog/20260530130000_add_parameter_critical_limits.xml"/>
 </databaseChangeLog>
