@@ -105,3 +105,25 @@ app:
 
   verification:
     base-url: http://localhost:11000
+
+# Observability: liveness/readiness probes + Prometheus metrics. Only health/info
+# are public (see SecurityConfig); everything else under /actuator requires
+# SUPER_ADMIN.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  info:
+    env:
+      enabled: false
