@@ -398,14 +398,28 @@ public class PatientService {
                         pendingVerifications = patientRepository.countByEmailVerifiedFalseAndPhoneVerifiedFalse();
                 }
 
-                String todayTrend = "+12% vs yesterday";
+                // Real trend: registrations since start-of-yesterday minus today's = yesterday's.
+                Instant beginningOfYesterdayInstant = beginningOfToday.minusDays(1).atZone(zone).toInstant();
+                long sinceYesterday = (branchCode != null && !branchCode.isEmpty())
+                                ? patientRepository.countByBranchCodeAndCreatedAtAfter(branchCode,
+                                                beginningOfYesterdayInstant)
+                                : patientRepository.countByCreatedAtAfter(beginningOfYesterdayInstant);
+                long yesterdayCount = Math.max(0, sinceYesterday - todayCount);
 
                 return DashboardStatisticsResponse.builder()
                                 .patientsRegisteredToday(todayCount)
                                 .newPatientsThisWeek(weekCount)
                                 .pendingVerifications(pendingVerifications)
-                                .todayTrend(todayTrend)
+                                .todayTrend(formatTrend(todayCount, yesterdayCount))
                                 .build();
+        }
+
+        private static String formatTrend(long today, long yesterday) {
+                if (yesterday == 0) {
+                        return today == 0 ? "no change vs yesterday" : "+100% vs yesterday";
+                }
+                long pct = Math.round((today - yesterday) * 100.0 / yesterday);
+                return (pct >= 0 ? "+" : "") + pct + "% vs yesterday";
         }
 
         private void initiateEmailVerification(PatientEntity patient) {
@@ -566,20 +580,7 @@ public class PatientService {
 
                 if (patient.getPhoneOtpExpiry() == null ||
                                 patient.getPhoneOtpExpiry().isBefore(LocalDateTime.now())) {
-                        auditService.log("OTP_EXPIRED_DEBUG", "PATIENT", patient.getId(), patient.getPatientCode(),
-                                        String.format("{\"expiry\":\"%s\", \"now\":\"%s\"}",
-                                                        patient.getPhoneOtpExpiry(),
-                                                        LocalDateTime.now()),
-                                        ipAddress);
-                        log.error("OTP_EXPIRED_DEBUG: Expiry={}, Now={}, Diff={}",
-                                        patient.getPhoneOtpExpiry(),
-                                        LocalDateTime.now(),
-                                        java.time.Duration
-                                                        .between(LocalDateTime.now(),
-                                                                        patient.getPhoneOtpExpiry() != null
-                                                                                        ? patient.getPhoneOtpExpiry()
-                                                                                        : LocalDateTime.now())
-                                                        .toSeconds());
+                        // Expected user condition — not an error; no debug audit/log noise.
                         throw new InvalidRequestException("OTP expired");
                 }
 
