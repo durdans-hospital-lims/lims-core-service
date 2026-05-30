@@ -38,6 +38,24 @@ public interface SampleRepository extends JpaRepository<SampleEntity, UUID>, Jpa
             + "ORDER BY COALESCE(s.collectedAt, s.rejectedAt, s.createdAt) DESC")
     Page<SampleEntity> findHistoryForStatuses(@Param("statuses") List<SampleStatus> statuses, Pageable pageable);
 
+    // Tenant-scoped variants: branch is reached via orderItem.order.branchCode;
+    // a null branch means "all branches" (SUPER_ADMIN only).
+    @Query("SELECT s FROM SampleEntity s WHERE s.status IN :statuses AND s.deleted = false "
+            + "AND (:branch IS NULL OR s.orderItem.order.branchCode = :branch)")
+    Page<SampleEntity> findByStatusInAndBranch(@Param("statuses") List<SampleStatus> statuses,
+                                               @Param("branch") String branch, Pageable pageable);
+
+    @Query("SELECT s FROM SampleEntity s WHERE s.status IN :statuses AND s.deleted = false "
+            + "AND (:branch IS NULL OR s.orderItem.order.branchCode = :branch) "
+            + "ORDER BY COALESCE(s.collectedAt, s.rejectedAt, s.createdAt) DESC")
+    Page<SampleEntity> findHistoryForStatusesInBranch(@Param("statuses") List<SampleStatus> statuses,
+                                                      @Param("branch") String branch, Pageable pageable);
+
+    @Query("SELECT s FROM SampleEntity s WHERE s.deleted = false "
+            + "AND (:branch IS NULL OR s.orderItem.order.branchCode = :branch) "
+            + "ORDER BY COALESCE(s.collectedAt, s.rejectedAt, s.createdAt) DESC")
+    List<SampleEntity> findAllMltWorklistSamplesInBranch(@Param("branch") String branch);
+
     long countByStatusAndDeletedFalse(SampleStatus status);
 
     long countByStatusAndOrderItem_Order_Bill_PaymentStatusAndDeletedFalse(
