@@ -36,6 +36,17 @@ class Hl7OruBuilderTest {
     }
 
     @Test
+    void escapesHl7DelimitersInData() {
+        var patient = new Hl7OruBuilder.Patient("PAT1", "O^Brien", "Jr|Sr", "19900202", "M");
+        var obs = List.of(
+                new Hl7OruBuilder.Observation("718-7", "Haemoglobin", "14.8", "g/dL", "13.0", "17.0", "N", true));
+        String msg = Hl7OruBuilder.build("M1", "20260530120000", patient, "S1", "58410-2", "FBC", obs);
+        String pid = msg.split("\r")[1];
+        // ^ and | inside the name are escaped, leaving the PID-5 component separator intact.
+        assertTrue(pid.contains("O\\S\\Brien^Jr\\F\\Sr"), pid);
+    }
+
+    @Test
     void mapsAbnormalFlags() {
         assertEquals("LL", Hl7OruBuilder.hl7Flag("CRITICAL_LOW"));
         assertEquals("HH", Hl7OruBuilder.hl7Flag("CRITICAL_HIGH"));
