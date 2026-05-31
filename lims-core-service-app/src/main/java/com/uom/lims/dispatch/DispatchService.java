@@ -91,6 +91,18 @@ public class DispatchService {
     private final OrderRepository orderRepository;
     private final PatientRepository patientRepository;
 
+    // Self-proxy so the phase-1/phase-3 @Transactional helpers are honoured when
+    // called from the non-transactional dispatch/retry methods (which perform the
+    // channel send in between, OUTSIDE any transaction).
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private DispatchService self;
+
+    /** Phase-1 result: the (now detached) dispatch item plus the attempts to send. */
+    private record PreparedDispatch(ReportDispatchItemEntity item,
+            java.util.List<ReportDeliveryAttemptEntity> attempts) {
+    }
+
     @Transactional
     public DispatchItemResponse registerAuthorizedReport(RegisterAuthorizedReportRequest request, String ipAddress) {
         return registerAuthorizedReportInternal(request, ipAddress, true);
@@ -221,16 +233,32 @@ public class DispatchService {
         return rows.stream().limit(Math.max(1, Math.min(limit, 200))).map(this::toFailedDelivery).toList();
     }
 
-    @Transactional
     public DispatchItemResponse dispatchReport(String reportReference, String branchCodeParam, DispatchReportRequest request,
             String ipAddress) {
-        ReportDispatchItemEntity item = loadItemForCurrentUser(reportReference.trim(), branchCodeParam);
-
         List<DeliveryMethod> methods = request.getMethods().stream().distinct().toList();
         if (methods.isEmpty()) {
             throw new InvalidRequestException("At least one delivery method is required");
         }
 
+        // Phase 1 (txn): persist the attempts as PENDING and commit.
+        PreparedDispatch prepared = self.persistPendingAttempts(reportReference.trim(), branchCodeParam, methods);
+
+        // Phase 2 (NO txn): perform the blocking channel sends, mutating the
+        // detached attempt objects in memory — no DB connection / lock held.
+        for (ReportDeliveryAttemptEntity attempt : prepared.attempts()) {
+            channelService.executeChannel(prepared.item(), attempt, request);
+        }
+
+        // Phase 3 (txn): merge the result and finalize.
+        return self.finalizeDispatch(prepared.item(), "DISPATCH_REPORT", "DISPATCH_EXECUTED",
+                "{\"methods\":\"" + methods + "\"}", ipAddress);
+    }
+
+    @Transactional
+    public PreparedDispatch persistPendingAttempts(String reportReference, String branchCodeParam,
+            List<DeliveryMethod> methods) {
+        ReportDispatchItemEntity item = loadItemForCurrentUser(reportReference, branchCodeParam);
+        List<ReportDeliveryAttemptEntity> created = new ArrayList<>();
         for (DeliveryMethod method : methods) {
             ReportDeliveryAttemptEntity attempt = new ReportDeliveryAttemptEntity();
             attempt.setDispatchItem(item);
@@ -238,73 +266,62 @@ public class DispatchService {
             attempt.setStatus(DeliveryAttemptStatus.PENDING);
             attempt.setRetryCount(0);
             item.getAttempts().add(attempt);
-            channelService.executeChannel(item, attempt, request);
+            created.add(attempt);
         }
-
-        item.setOverallStatus(aggregateStatusFromAttempts(item.getAttempts()));
-        ReportDispatchItemEntity saved = itemRepository.save(item);
-        updateLinkedOrderIfDelivered(saved);
-
-        auditService.log(
-                "DISPATCH_REPORT",
-                "REPORT_DISPATCH",
-                saved.getId(),
-                saved.getReportReference(),
-                "{\"methods\":\"" + methods + "\"}",
-                ipAddress);
-
-        applicationEventPublisher.publishEvent(new ReportDispatchDomainEvent(
-                "DISPATCH_EXECUTED",
-                saved.getReportReference(),
-                saved.getBranchCode(),
-                saved.getOverallStatus().name(),
-                LocalDateTime.now()));
-
-        return mapToDetailResponse(saved);
+        itemRepository.save(item); // assigns ids to the new attempts (cascade)
+        return new PreparedDispatch(item, created);
     }
 
-    @Transactional
     public DispatchItemResponse retryAttempt(UUID attemptId, String ipAddress) {
-        ReportDeliveryAttemptEntity attempt = attemptRepository.findByIdWithItem(attemptId)
-                .orElseThrow(() -> new ResourceNotFoundException("Delivery attempt not found"));
+        // Phase 1 (txn): validate + mark PENDING.
+        PreparedDispatch prepared = self.prepareRetry(attemptId);
+        ReportDeliveryAttemptEntity attempt = prepared.attempts().get(0);
 
-        ReportDispatchItemEntity item = attempt.getDispatchItem();
-        assertBranchAccess(item.getBranchCode());
-
-        if (attempt.getStatus() != DeliveryAttemptStatus.FAILED) {
-            throw new InvalidRequestException("Only failed attempts can be retried");
-        }
-
-        attempt.setRetryCount(attempt.getRetryCount() + 1);
-        attempt.setStatus(DeliveryAttemptStatus.PENDING);
-        attempt.setFailureReason(null);
-        attempt.setDeliveredAt(null);
-
+        // Phase 2 (NO txn): send.
         DispatchReportRequest minimal = DispatchReportRequest.builder()
                 .methods(List.of(attempt.getMethod()))
                 .postalAddress(attempt.getRecipientContact())
                 .trackingNumber(attempt.getTrackingNumber())
                 .build();
-        channelService.executeChannel(item, attempt, minimal);
+        channelService.executeChannel(prepared.item(), attempt, minimal);
 
+        // Phase 3 (txn): merge + finalize.
+        return self.finalizeDispatch(prepared.item(), "DISPATCH_RETRY", "DISPATCH_RETRY",
+                "{\"attemptId\":\"" + attemptId + "\"}", ipAddress);
+    }
+
+    @Transactional
+    public PreparedDispatch prepareRetry(UUID attemptId) {
+        ReportDeliveryAttemptEntity attempt = attemptRepository.findByIdWithItem(attemptId)
+                .orElseThrow(() -> new ResourceNotFoundException("Delivery attempt not found"));
+        ReportDispatchItemEntity item = attempt.getDispatchItem();
+        assertBranchAccess(item.getBranchCode());
+        if (attempt.getStatus() != DeliveryAttemptStatus.FAILED) {
+            throw new InvalidRequestException("Only failed attempts can be retried");
+        }
+        attempt.setRetryCount(attempt.getRetryCount() + 1);
+        attempt.setStatus(DeliveryAttemptStatus.PENDING);
+        attempt.setFailureReason(null);
+        attempt.setDeliveredAt(null);
+        item.getAttempts().size(); // force-initialise for the phase-3 aggregate
+        itemRepository.save(item);
+        return new PreparedDispatch(item, List.of(attempt));
+    }
+
+    /** Phase 3: merge the detached item (with the mutated attempt statuses), aggregate, audit, publish. */
+    @Transactional
+    public DispatchItemResponse finalizeDispatch(ReportDispatchItemEntity item, String auditAction,
+            String eventType, String auditDetailJson, String ipAddress) {
         item.setOverallStatus(aggregateStatusFromAttempts(item.getAttempts()));
-        ReportDispatchItemEntity saved = itemRepository.save(item);
+        ReportDispatchItemEntity saved = itemRepository.save(item); // merge persists the mutated attempts
         updateLinkedOrderIfDelivered(saved);
 
-        auditService.log(
-                "DISPATCH_RETRY",
-                "REPORT_DISPATCH",
-                saved.getId(),
-                saved.getReportReference(),
-                "{\"attemptId\":\"" + attemptId + "\"}",
-                ipAddress);
+        auditService.log(auditAction, "REPORT_DISPATCH", saved.getId(), saved.getReportReference(),
+                auditDetailJson, ipAddress);
 
         applicationEventPublisher.publishEvent(new ReportDispatchDomainEvent(
-                "DISPATCH_RETRY",
-                saved.getReportReference(),
-                saved.getBranchCode(),
-                saved.getOverallStatus().name(),
-                LocalDateTime.now()));
+                eventType, saved.getReportReference(), saved.getBranchCode(),
+                saved.getOverallStatus().name(), LocalDateTime.now()));
 
         return mapToDetailResponse(saved);
     }
