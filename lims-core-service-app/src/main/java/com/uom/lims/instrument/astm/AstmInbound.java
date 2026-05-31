@@ -47,9 +47,13 @@ public final class AstmInbound {
      * Run one ASTM session and return the reassembled records (H/P/O/R/C/L lines).
      * Blocks until EOT or end-of-stream.
      */
+    /** Abort the session after this many consecutive NAKs to avoid an unbounded NAK/retransmit loop. */
+    public static final int MAX_CONSECUTIVE_NAKS = 6;
+
     public static List<String> receive(InputStream in, OutputStream out) throws IOException {
         List<String> records = new ArrayList<>();
         StringBuilder current = new StringBuilder();
+        int consecutiveNaks = 0;
 
         int b;
         while ((b = in.read()) != -1) {
@@ -61,13 +65,17 @@ public final class AstmInbound {
             } else if (b == STX) {
                 Frame frame = readFrame(in);
                 if (frame == null) {
-                    break;
+                    break; // end of stream mid-frame
                 }
                 if (!frame.checksumValid) {
                     out.write(NAK);
                     out.flush();
+                    if (++consecutiveNaks >= MAX_CONSECUTIVE_NAKS) {
+                        break; // peer keeps sending corrupt frames — give up
+                    }
                     continue;
                 }
+                consecutiveNaks = 0;
                 current.append(frame.text);
                 if (frame.last) {
                     records.add(current.toString());
@@ -108,6 +116,9 @@ public final class AstmInbound {
         int c2 = in.read();
         int cr = in.read();
         int lf = in.read();
+        if (c1 == -1 || c2 == -1 || cr == -1 || lf == -1) {
+            return null; // truncated tail — treat as end of stream
+        }
         String received = "" + (char) c1 + (char) c2;
         String body = text.toString(StandardCharsets.US_ASCII);
         String expected = checksum(fn, body, terminator);

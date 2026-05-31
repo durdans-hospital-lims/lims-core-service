@@ -38,10 +38,18 @@ public class InstrumentTcpListener {
 
     private final InstrumentResultIngestionService ingestionService;
 
+    private static final int SESSION_READ_TIMEOUT_MS = 30_000;
+
     private volatile boolean running = false;
     private ServerSocket serverSocket;
     private final ExecutorService acceptor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "instrument-acceptor");
+        t.setDaemon(true);
+        return t;
+    });
+    // Sessions run on a bounded pool so one slow/hung analyzer can't block accepting others.
+    private final ExecutorService workers = Executors.newFixedThreadPool(8, r -> {
+        Thread t = new Thread(r, "instrument-worker");
         t.setDaemon(true);
         return t;
     });
@@ -62,11 +70,14 @@ public class InstrumentTcpListener {
             this.serverSocket = server;
             while (running) {
                 Socket socket = server.accept();
-                try (socket) {
-                    handle(socket);
-                } catch (Exception e) {
-                    log.warn("Instrument session error", e);
-                }
+                socket.setSoTimeout(SESSION_READ_TIMEOUT_MS);
+                workers.submit(() -> {
+                    try (socket) {
+                        handle(socket);
+                    } catch (Exception e) {
+                        log.warn("Instrument session error", e);
+                    }
+                });
             }
         } catch (Exception e) {
             if (running) {
@@ -99,5 +110,6 @@ public class InstrumentTcpListener {
             // closing on shutdown
         }
         acceptor.shutdownNow();
+        workers.shutdownNow();
     }
 }
