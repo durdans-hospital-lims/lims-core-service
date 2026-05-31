@@ -86,8 +86,20 @@ public final class Hl7OruBuilder {
         };
     }
 
+    /**
+     * Null-safe + HL7 escaping. A delimiter ({@code | ^ ~ & \}) inside a data
+     * value (e.g. a name like {@code O'Brien^Jr}) would otherwise inject spurious
+     * fields/components and corrupt the message; escape them per HL7 v2.
+     */
     private static String nz(String s) {
-        return s == null ? "" : s;
+        if (s == null) {
+            return "";
+        }
+        return s.replace("\\", "\\E\\")  // escape the escape char first
+                .replace("|", "\\F\\")
+                .replace("^", "\\S\\")
+                .replace("&", "\\T\\")
+                .replace("~", "\\R\\");
     }
 
     private static boolean isBlank(String s) {

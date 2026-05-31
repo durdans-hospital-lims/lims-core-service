@@ -65,6 +65,7 @@ public class MltTestingService {
         private final TestResultRepository resultRepository;
         private final TestCatalogRepository testCatalogRepository;
         private final PatientRepository patientRepository;
+        private final com.uom.lims.refrange.ReferenceRangeService referenceRangeService;
         private final AuditService auditService;
         private final AuditLogRepository auditLogRepository;
         private final ObjectMapper objectMapper;
@@ -202,6 +203,16 @@ public class MltTestingService {
                 Map<UUID, String> parameterNames = testParameters.stream()
                                 .collect(Collectors.toMap(TestParameterEntity::getId, TestParameterEntity::getName));
 
+                // Resolve the patient's sex/age once so flagging can use age/sex-banded
+                // reference ranges (falls back to the parameter's own limits otherwise).
+                PatientEntity patientForRanges = patientRepository
+                                .findByPatientCode(sample.getOrderItem().getOrder().getPatientId()).orElse(null);
+                com.uom.lims.api.common.enums.Gender patientGender =
+                                patientForRanges != null ? patientForRanges.getGender() : null;
+                Integer patientAge = (patientForRanges != null && patientForRanges.getDob() != null)
+                                ? java.time.Period.between(patientForRanges.getDob(), java.time.LocalDate.now()).getYears()
+                                : null;
+
                 for (ResultItemRequest item : request.results()) {
 
                         TestParameterEntity parameter = parameterRepository.findById(item.parameterId())
@@ -225,7 +236,7 @@ public class MltTestingService {
                         result.setResultDataType(numericValue != null ? "NUMERIC" : "TEXT");
                         result.setMltNotes(request.mltNotes());
                         result.setDraft(isDraft);
-                        result.setFlag(resolveResultFlag(item, parameter));
+                        result.setFlag(resolveResultFlag(item, parameter, patientGender, patientAge));
                         result.setStatus(isDraft ? null : ResultStatus.ENTERED);
 
                         resultRepository.save(result);
@@ -539,7 +550,8 @@ public class MltTestingService {
                 }
         }
 
-        private ResultFlag resolveResultFlag(ResultItemRequest item, TestParameterEntity parameter) {
+        private ResultFlag resolveResultFlag(ResultItemRequest item, TestParameterEntity parameter,
+                        com.uom.lims.api.common.enums.Gender gender, Integer ageYears) {
                 ResultFlag submittedFlag = null;
                 if (item.flag() != null && !item.flag().isBlank()) {
                         try {
@@ -556,26 +568,24 @@ public class MltTestingService {
                 BigDecimal numericResult = parseNumericResult(item.result());
 
                 if (numericResult != null) {
-                        // Panic limits are analyte-specific and configured per parameter
-                        // (NOT inferred as a percentage of the reference interval).
-                        if (parameter.getCriticalLow() != null
-                                        && numericResult.compareTo(parameter.getCriticalLow()) <= 0) {
-                                return ResultFlag.CRITICAL_LOW;
+                        // Prefer an age/sex-banded reference range when configured; otherwise
+                        // use the parameter's own reference/critical limits.
+                        BigDecimal refLow = parameter.getRefLow();
+                        BigDecimal refHigh = parameter.getRefHigh();
+                        BigDecimal critLow = parameter.getCriticalLow();
+                        BigDecimal critHigh = parameter.getCriticalHigh();
+                        com.uom.lims.refrange.ReferenceRangeEntity banded =
+                                        referenceRangeService.resolve(parameter.getId(), gender, ageYears);
+                        if (banded != null) {
+                                if (banded.getRefLow() != null) refLow = banded.getRefLow();
+                                if (banded.getRefHigh() != null) refHigh = banded.getRefHigh();
+                                if (banded.getCriticalLow() != null) critLow = banded.getCriticalLow();
+                                if (banded.getCriticalHigh() != null) critHigh = banded.getCriticalHigh();
                         }
-                        if (parameter.getCriticalHigh() != null
-                                        && numericResult.compareTo(parameter.getCriticalHigh()) >= 0) {
-                                return ResultFlag.CRITICAL_HIGH;
-                        }
-
-                        if (parameter.getRefLow() != null && numericResult.compareTo(parameter.getRefLow()) < 0) {
-                                return ResultFlag.LOW;
-                        }
-                        if (parameter.getRefHigh() != null && numericResult.compareTo(parameter.getRefHigh()) > 0) {
-                                return ResultFlag.HIGH;
-                        }
-
-                        if (parameter.getRefLow() != null || parameter.getRefHigh() != null) {
-                                return ResultFlag.NORMAL;
+                        ResultFlag computed = com.uom.lims.results.ResultFlagResolver.fromThresholds(
+                                        numericResult, refLow, refHigh, critLow, critHigh);
+                        if (computed != null) {
+                                return computed;
                         }
                 }
 
