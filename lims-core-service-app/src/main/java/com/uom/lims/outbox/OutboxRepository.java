@@ -1,11 +1,7 @@
 package com.uom.lims.outbox;
 
-import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -15,12 +11,11 @@ import java.util.UUID;
 public interface OutboxRepository extends JpaRepository<OutboxEvent, UUID> {
 
     /**
-     * Claim a batch of unpublished events oldest-first. {@code FOR UPDATE SKIP
-     * LOCKED} lets multiple relay instances poll concurrently without handing the
-     * same row to two publishers.
+     * Pending events oldest-first, excluding ones that have exhausted their
+     * retries (failed_at set). No pessimistic lock: the relay sends OUTSIDE a
+     * transaction and updates each row in its own short transaction, so it must
+     * not hold row locks across the (slow) Kafka send. Delivery is at-least-once
+     * and consumers are idempotent, so an occasional duplicate is acceptable.
      */
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @QueryHints(@jakarta.persistence.QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))
-    @Query("SELECT e FROM OutboxEvent e WHERE e.publishedAt IS NULL ORDER BY e.createdAt ASC")
-    List<OutboxEvent> claimUnpublished(Pageable pageable);
+    List<OutboxEvent> findByPublishedAtIsNullAndFailedAtIsNullOrderByCreatedAtAsc(Pageable pageable);
 }

@@ -53,4 +53,8 @@ public class OutboxEvent {
 
     @Column(name = "attempts", nullable = false)
     private int attempts = 0;
+
+    /** Set once the max retry count is exceeded — the row is then excluded from the relay. */
+    @Column(name = "failed_at")
+    private Instant failedAt;
 }

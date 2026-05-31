@@ -30,4 +30,5 @@
     <include file="liquibase/changelog/20260530180000_create_qc_result.xml"/>
     <include file="liquibase/changelog/20260530190000_add_clinical_signature.xml"/>
     <include file="liquibase/changelog/20260530200000_create_reference_range.xml"/>
+    <include file="liquibase/changelog/20260530210000_add_outbox_failed_at.xml"/>
 </databaseChangeLog>
