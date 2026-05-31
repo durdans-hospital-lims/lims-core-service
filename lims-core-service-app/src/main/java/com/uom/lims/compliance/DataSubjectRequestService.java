@@ -37,6 +37,10 @@ public class DataSubjectRequestService {
     @Transactional
     public void recordConsent(String patientCode, String consentVersion, String ipAddress) {
         PatientEntity patient = require(patientCode);
+        // Tenant isolation: only record consent for a patient in the caller's branch.
+        if (!com.uom.lims.security.SecurityUtils.canAccessBranch(patient.getBranchCode())) {
+            throw new ResourceNotFoundException("Patient not found: " + patientCode);
+        }
         patient.setConsentGiven(true);
         patient.setConsentAt(LocalDateTime.now());
         patient.setConsentVersion(consentVersion);

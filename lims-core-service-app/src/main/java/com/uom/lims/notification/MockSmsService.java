@@ -10,9 +10,14 @@ public class MockSmsService implements SmsService {
 
     @Override
     public void sendSms(String phoneNumber, String message) {
-        log.info("=== MOCK SMS ===");
-        log.info("To: {}", phoneNumber);
-        log.info("Message: {}", message);
-        log.info("================");
+        // Do not log message bodies — they can contain OTPs/PII. Log length only.
+        log.info("MOCK SMS to {} ({} chars)", maskPhone(phoneNumber), message == null ? 0 : message.length());
+    }
+
+    private static String maskPhone(String phone) {
+        if (phone == null || phone.length() < 4) {
+            return "****";
+        }
+        return "****" + phone.substring(phone.length() - 4);
     }
 }
