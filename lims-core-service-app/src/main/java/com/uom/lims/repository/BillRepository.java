@@ -20,5 +20,13 @@ public interface BillRepository extends JpaRepository<BillEntity, UUID> {
     long countByPaymentStatusAndDeletedFalse(PaymentStatus status);
     Page<BillEntity> findAllByPaymentStatusAndDeletedFalse(PaymentStatus status, Pageable pageable);
     Page<BillEntity> findAllByDeletedFalse(Pageable pageable);
+
+    // Branch-scoped via the owning order (null branch = all, for SUPER_ADMIN).
+    @org.springframework.data.jpa.repository.Query("SELECT b FROM BillEntity b "
+            + "WHERE b.paymentStatus = :status AND b.deleted = false "
+            + "AND (:branch IS NULL OR b.order.branchCode = :branch)")
+    java.util.List<BillEntity> findByPaymentStatusInBranch(
+            @org.springframework.data.repository.query.Param("status") PaymentStatus status,
+            @org.springframework.data.repository.query.Param("branch") String branch);
 }
 
