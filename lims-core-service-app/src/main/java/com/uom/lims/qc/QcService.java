@@ -41,6 +41,11 @@ public class QcService {
 
     @Transactional
     public QcRunOutcome record(RecordQcRunRequest req) {
+        if (req.measuredValue() == null || req.mean() == null
+                || req.sd() == null || req.sd().signum() <= 0) {
+            throw new com.uom.lims.exception.BusinessValidationException(
+                    "measuredValue, mean and a positive sd are required");
+        }
         double value = req.measuredValue().doubleValue();
         double mean = req.mean().doubleValue();
         double sd = req.sd().doubleValue();

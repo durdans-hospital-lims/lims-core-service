@@ -208,15 +208,19 @@ public class GlobalExceptionHandler {
 
         @ExceptionHandler(Exception.class)
         public ResponseEntity<?> handleGenericException(Exception ex) {
-                log.error("Unexpected error occurred", ex);
+                // Do NOT echo ex.getMessage() to the client (it can leak SQL/constraint/
+                // stack detail). Log the detail server-side under a correlation id and
+                // return only that id so support can locate it.
+                String correlationId = java.util.UUID.randomUUID().toString();
+                log.error("Unexpected error [{}]", correlationId, ex);
 
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                                 Map.of(
                                                 "timestamp", LocalDateTime.now(),
                                                 "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
                                                 "error", "Internal Server Error",
-                                                "message", ex.getMessage() != null ? ex.getMessage()
-                                                                : "An unexpected error occurred"));
+                                                "message", "An unexpected error occurred. Reference: " + correlationId,
+                                                "correlationId", correlationId));
         }
 
         @ExceptionHandler(BusinessRuleException.class)
