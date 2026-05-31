@@ -158,8 +158,9 @@ public class VerificationService {
                 page,
                 size,
                 Sort.by(Sort.Order.desc("lastModifiedAt"), Sort.Order.desc("id")));
-        Page<SampleEntity> samplesPage = sampleRepository.findAllByStatusAndDeletedFalse(
-                SampleStatus.SENT_FOR_VERIFICATION,
+        Page<SampleEntity> samplesPage = sampleRepository.findByStatusInAndBranch(
+                List.of(SampleStatus.SENT_FOR_VERIFICATION),
+                SecurityUtils.resolveBranchScope(),
                 pageable);
 
         List<UUID> testIds = samplesPage.getContent().stream()

@@ -79,8 +79,9 @@ public class ClinicalAuthorizationService {
                 page,
                 size,
                 Sort.by(Sort.Order.desc("lastModifiedAt"), Sort.Order.desc("id")));
-        Page<SampleEntity> samplesPage = sampleRepository.findAllByStatusAndDeletedFalse(
-                SampleStatus.VERIFIED,
+        Page<SampleEntity> samplesPage = sampleRepository.findByStatusInAndBranch(
+                List.of(SampleStatus.VERIFIED),
+                SecurityUtils.resolveBranchScope(),
                 pageable);
 
         List<UUID> testIds = samplesPage.getContent().stream()

@@ -26,4 +26,12 @@ public interface OrderRepository extends JpaRepository<OrderEntity, UUID>, JpaSp
     Page<OrderEntity> findAllByPatientIdAndDeletedFalse(String patientId, Pageable pageable);
     long countByCreatedAtBetweenAndDeletedFalse(Instant start, Instant end);
     long countByPatientIdAndDeletedFalse(String patientId);
+
+    // Branch-scoped (null branch = all, for SUPER_ADMIN).
+    @org.springframework.data.jpa.repository.Query("SELECT count(o) FROM OrderEntity o "
+            + "WHERE o.createdAt BETWEEN :start AND :end AND o.deleted = false "
+            + "AND (:branch IS NULL OR o.branchCode = :branch)")
+    long countCreatedBetweenInBranch(@org.springframework.data.repository.query.Param("start") Instant start,
+                                     @org.springframework.data.repository.query.Param("end") Instant end,
+                                     @org.springframework.data.repository.query.Param("branch") String branch);
 }

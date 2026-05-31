@@ -10,6 +10,7 @@ import com.uom.lims.repository.BillRepository;
 import com.uom.lims.repository.OrderRepository;
 import com.uom.lims.repository.PaymentRepository;
 import com.uom.lims.repository.SampleRepository;
+import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
@@ -57,15 +58,15 @@ public class StatisticsService {
     public OrdersBillingStatsResponse getOrdersBillingStats() {
         Instant[] todayBounds = todayBounds();
         Instant[] yesterdayBounds = yesterdayBounds();
+        // Tenant isolation: branch users see only their branch's metrics.
+        String scope = SecurityUtils.resolveBranchScope();
 
-        long testOrdersToday = orderRepository.countByCreatedAtBetweenAndDeletedFalse(
-                todayBounds[0], todayBounds[1]);
-        long yesterdayOrders = orderRepository.countByCreatedAtBetweenAndDeletedFalse(
-                yesterdayBounds[0], yesterdayBounds[1]);
+        long testOrdersToday = orderRepository.countCreatedBetweenInBranch(
+                todayBounds[0], todayBounds[1], scope);
+        long yesterdayOrders = orderRepository.countCreatedBetweenInBranch(
+                yesterdayBounds[0], yesterdayBounds[1], scope);
 
-        List<BillEntity> pendingBills = billRepository
-                .findAllByPaymentStatusAndDeletedFalse(PaymentStatus.PENDING, Pageable.unpaged())
-                .getContent();
+        List<BillEntity> pendingBills = billRepository.findByPaymentStatusInBranch(PaymentStatus.PENDING, scope);
         long pendingPayments = pendingBills.size();
         long partialPayments = pendingBills.stream()
                 .filter(bill -> bill.getPaidAmount() != null
@@ -76,7 +77,7 @@ public class StatisticsService {
 
         // WHY: Revenue today is the sum of all non-reversed payments received today.
         BigDecimal totalRevenueToday = paymentRepository
-                .findAllByReversedFalseAndPaymentDateBetween(todayBounds[0], todayBounds[1])
+                .findReceivedInBranch(todayBounds[0], todayBounds[1], scope)
                 .stream()
                 .map(p -> p.getAmount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -107,13 +108,15 @@ public class StatisticsService {
      */
     public PhlebotomyStatsResponse getPhlebotomyStats() {
         Instant[] todayBounds = todayBounds();
+        String scope = SecurityUtils.resolveBranchScope();
         List<SampleStatus> actionableStatuses = List.of(
                 SampleStatus.PENDING_COLLECTION,
                 SampleStatus.RECOLLECTION_REQUIRED);
 
-        long pendingCollections = sampleRepository
-                .findAllByStatusInAndDeletedFalse(actionableStatuses, Pageable.unpaged())
-                .getContent().stream()
+        List<com.uom.lims.entity.SampleEntity> actionable =
+                sampleRepository.findByStatusInAndBranchList(actionableStatuses, scope);
+
+        long pendingCollections = actionable.stream()
                 .filter(s -> s.getOrderItem() != null
                         && s.getOrderItem().getOrder() != null
                         && s.getOrderItem().getOrder().getBill() != null
@@ -122,9 +125,7 @@ public class StatisticsService {
 
         // WHY: STAT and URGENT samples are counted together because both require
         // expedited processing — only NORMAL samples can be queued in standard order.
-        long urgentSamples = sampleRepository
-                .findAllByStatusInAndDeletedFalse(actionableStatuses, Pageable.unpaged())
-                .getContent().stream()
+        long urgentSamples = actionable.stream()
                 .filter(s -> s.getOrderItem() != null
                         && s.getOrderItem().getOrder() != null
                         && s.getOrderItem().getOrder().getBill() != null
@@ -132,10 +133,10 @@ public class StatisticsService {
                 .filter(s -> s.getPriority() == Priority.STAT || s.getPriority() == Priority.URGENT)
                 .count();
 
-        long collectedToday = sampleRepository.countByStatusAndCollectedAtBetweenAndDeletedFalse(
-                SampleStatus.COLLECTED, todayBounds[0], todayBounds[1]);
+        long collectedToday = sampleRepository.countByStatusAndCollectedBetweenInBranch(
+                SampleStatus.COLLECTED, todayBounds[0], todayBounds[1], scope);
 
-        long rejections = sampleRepository.countByStatusAndDeletedFalse(SampleStatus.REJECTED);
+        long rejections = sampleRepository.countByStatusInBranch(SampleStatus.REJECTED, scope);
 
         return PhlebotomyStatsResponse.builder()
                 .pendingCollections(pendingCollections)

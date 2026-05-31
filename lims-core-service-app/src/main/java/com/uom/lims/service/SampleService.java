@@ -80,6 +80,7 @@ public class SampleService {
             return List.of();
         }
 
+        final String reprintBranchScope = com.uom.lims.security.SecurityUtils.resolveBranchScope();
         Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"));
         Specification<SampleEntity> specification = (root, criteriaQuery, criteriaBuilder) -> {
             var orderItemJoin = root.join("orderItem", JoinType.INNER);
@@ -100,10 +101,15 @@ public class SampleService {
 
             criteriaQuery.distinct(true);
 
+            var branchPredicate = reprintBranchScope == null
+                    ? criteriaBuilder.conjunction()
+                    : criteriaBuilder.equal(orderJoin.get("branchCode"), reprintBranchScope);
+
             return criteriaBuilder.and(
                     notDeletedPredicate,
                     notRejectedPredicate,
                     testLink,
+                    branchPredicate,
                     criteriaBuilder.or(
                             barcodePredicate,
                             patientPredicate,
@@ -142,6 +148,16 @@ public class SampleService {
         return history.map(this::toHistoryResponse);
     }
 
+    /** Tenant isolation: a branch user may only act on a sample in their branch. */
+    private void assertSampleBranchAccess(SampleEntity sample) {
+        String branch = (sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null)
+                ? sample.getOrderItem().getOrder().getBranchCode()
+                : null;
+        if (!com.uom.lims.security.SecurityUtils.canAccessBranch(branch)) {
+            throw new ResourceNotFoundException("Sample not found");
+        }
+    }
+
     @Transactional(readOnly = true)
     public SampleResponse getSampleDetail(UUID sampleId) {
         SampleEntity sample = sampleRepository.findById(sampleId)
@@ -149,6 +165,7 @@ public class SampleService {
         if (sample.isDeleted()) {
             throw new ResourceNotFoundException("Sample not found with id: " + sampleId);
         }
+        assertSampleBranchAccess(sample);
         return toResponse(sample);
     }
 
@@ -158,6 +175,7 @@ public class SampleService {
         if (sample.isDeleted()) {
             throw new ResourceNotFoundException("Sample not found with id: " + sampleId);
         }
+        assertSampleBranchAccess(sample);
         if (sample.getStatus() != SampleStatus.COLLECTED) {
             throw new InvalidStateTransitionException(
                     "Cannot register specimen label print for sample "

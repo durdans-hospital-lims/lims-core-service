@@ -74,6 +74,7 @@ public class MltTestingService {
 
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
+                assertSampleBranchAccess(sample);
 
                 UUID testId = sample.getOrderItem().getTestId();
                 TestCatalogEntity testCatalog = testCatalogRepository.findById(testId)
@@ -172,6 +173,7 @@ public class MltTestingService {
         private void processResults(UUID sampleId, SubmitResultsRequest request, boolean isDraft) {
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
+                assertSampleBranchAccess(sample);
 
                 if (isDraft) {
                         if (sample.getStatus() != SampleStatus.ACCEPTED
@@ -414,8 +416,10 @@ public class MltTestingService {
 
         private List<MltWorklistItemResponse> getWorklistByStatuses(List<SampleStatus> statuses) {
 
+                // Tenant isolation: MLT worklist scoped to the caller's branch.
                 List<SampleEntity> samples = sampleRepository
-                                .findByStatusInAndDeletedFalseOrderByCollectedAtAsc(statuses);
+                                .findByStatusInAndBranchOrderByCollectedAt(statuses,
+                                                SecurityUtils.resolveBranchScope());
                 List<UUID> testIds = samples.stream()
                                 .map(sample -> sample.getOrderItem().getTestId())
                                 .distinct()
@@ -446,6 +450,7 @@ public class MltTestingService {
 
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
+                assertSampleBranchAccess(sample);
 
                 if (sample.getStatus() != SampleStatus.COLLECTED) {
                         throw new BusinessRuleException("Only COLLECTED samples can be accepted");
@@ -468,6 +473,7 @@ public class MltTestingService {
 
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
+                assertSampleBranchAccess(sample);
 
                 if (sample.getStatus() != SampleStatus.COLLECTED) {
                         throw new BusinessRuleException("Only COLLECTED samples can be rejected");
@@ -520,6 +526,16 @@ public class MltTestingService {
                         return objectMapper.writeValueAsString(details);
                 } catch (JsonProcessingException exception) {
                         throw new BusinessRuleException("Could not create accessioning audit log details");
+                }
+        }
+
+        /** Tenant isolation: a branch user may only act on a sample in their branch. */
+        private void assertSampleBranchAccess(SampleEntity sample) {
+                String branch = (sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null)
+                                ? sample.getOrderItem().getOrder().getBranchCode()
+                                : null;
+                if (!SecurityUtils.canAccessBranch(branch)) {
+                        throw new ResourceNotFoundException("Sample not found");
                 }
         }
 

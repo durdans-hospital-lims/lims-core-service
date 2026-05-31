@@ -149,10 +149,13 @@ public class PatientDocumentService {
             String patientCode,
             Pageable pageable) {
 
-        // Validate patient exists
-        patientRepository.findByPatientCode(patientCode)
+        // Validate patient exists + tenant isolation (branch users see only their branch).
+        com.uom.lims.patient.PatientEntity patient = patientRepository.findByPatientCode(patientCode)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Patient not found with code: " + patientCode));
+        if (!com.uom.lims.security.SecurityUtils.canAccessBranch(patient.getBranchCode())) {
+            throw new ResourceNotFoundException("Patient not found with code: " + patientCode);
+        }
 
         Page<PatientDocumentEntity> page = documentRepository.findByPatient_PatientCodeAndDeletedFalse(
                 patientCode,
@@ -169,6 +172,10 @@ public class PatientDocumentService {
                         "Document not found for patient: " + patientCode));
 
         if (document.isDeleted()) {
+            throw new ResourceNotFoundException("Document not found");
+        }
+        // Tenant isolation: no cross-branch download (a presigned URL would expose PHI).
+        if (!com.uom.lims.security.SecurityUtils.canAccessBranch(document.getBranchCode())) {
             throw new ResourceNotFoundException("Document not found");
         }
 
