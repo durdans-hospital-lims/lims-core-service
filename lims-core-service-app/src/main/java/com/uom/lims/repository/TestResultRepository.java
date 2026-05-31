@@ -105,7 +105,7 @@ public interface TestResultRepository extends JpaRepository<TestResultEntity, UU
               and tr.resultNumeric is not null
               and tr.deleted = false
               and s.deleted = false
-            order by coalesce(tr.technicallyVerifiedAt, s.collectedAt, tr.createdAt) desc
+            order by coalesce(s.collectedAt, s.createdAt) desc, tr.createdAt desc
             """)
     List<TestResultEntity> findPriorNumericResults(
             @Param("patientId") String patientId,
