@@ -31,6 +31,7 @@ public class DataSubjectRequestService {
     private final PatientRepository patientRepository;
     private final OrderRepository orderRepository;
     private final AuditService auditService;
+    private final com.uom.lims.patientdocument.PatientDocumentStorageService storageService;
 
     /** Record the patient's consent to process their health data. */
     @Transactional
@@ -106,6 +107,27 @@ public class DataSubjectRequestService {
         p.setHomeNumber(null);
         p.setContactPersonName(null);
         p.setContactPersonPhone(null);
+        // Additional identifying / special-category fields.
+        p.setTitle(null);
+        p.setMaritalStatus(null);
+        p.setNationality(null);
+        p.setBloodGroup(null);
+        // Clear residual auth/verification artifacts (token + OTP hashes).
+        p.setPhoneOtpHash(null);
+        p.setPhoneOtpExpiry(null);
+        p.setLastOtpSentAt(null);
+        p.setEmailVerificationTokenHash(null);
+        p.setEmailVerificationExpiry(null);
+        p.setLastVerificationSentAt(null);
+        // Delete the profile photo object from storage, then clear the path.
+        String photoPath = p.getProfilePhotoPath();
+        if (photoPath != null && !photoPath.isBlank()) {
+            try {
+                storageService.deleteFile(photoPath);
+            } catch (Exception e) {
+                log.warn("Could not delete profile photo for erased patient {}", p.getPatientCode(), e);
+            }
+        }
         p.setProfilePhotoPath(null);
         if (p.getDob() != null) {
             p.setDob(LocalDate.of(p.getDob().getYear(), 1, 1)); // de-identify DOB to birth year
