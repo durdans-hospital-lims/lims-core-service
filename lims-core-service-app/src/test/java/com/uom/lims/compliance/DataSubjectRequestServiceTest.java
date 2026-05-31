@@ -26,6 +26,7 @@ class DataSubjectRequestServiceTest {
     @Mock PatientRepository patientRepository;
     @Mock OrderRepository orderRepository;
     @Mock AuditService auditService;
+    @Mock com.uom.lims.patientdocument.PatientDocumentStorageService storageService;
     @InjectMocks DataSubjectRequestService service;
 
     @Test
@@ -39,6 +40,9 @@ class DataSubjectRequestServiceTest {
         p.setIdentityNumber("199012345678");
         p.setAddress("12 Galle Road, Colombo");
         p.setContactPersonName("Kamala");
+        p.setNationality("Sri Lankan");
+        p.setPhoneOtpHash("otp-hash");
+        p.setEmailVerificationTokenHash("email-token-hash");
         p.setDob(LocalDate.of(1990, 2, 2));
 
         when(patientRepository.findByPatientCode("PAT2026-00042")).thenReturn(Optional.of(p));
@@ -54,6 +58,9 @@ class DataSubjectRequestServiceTest {
         assertNull(saved.getIdentityNumber());
         assertEquals("REDACTED", saved.getAddress());
         assertNull(saved.getContactPersonName());
+        assertNull(saved.getNationality());
+        assertNull(saved.getPhoneOtpHash());
+        assertNull(saved.getEmailVerificationTokenHash());
         // Phone is unique+not-null: replaced with a stable anonymised placeholder.
         assertEquals("ANON-PAT2026-00042", saved.getPhone());
         // DOB de-identified to birth year only.
