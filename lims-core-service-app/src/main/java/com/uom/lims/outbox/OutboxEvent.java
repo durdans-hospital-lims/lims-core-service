@@ -57,4 +57,8 @@ public class OutboxEvent {
     /** Set once the max retry count is exceeded — the row is then excluded from the relay. */
     @Column(name = "failed_at")
     private Instant failedAt;
+
+    /** W3C traceparent of the request that wrote this row, re-attached on publish (G6). */
+    @Column(name = "traceparent", length = 64)
+    private String traceparent;
 }

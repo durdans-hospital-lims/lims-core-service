@@ -76,7 +76,7 @@ public class DataSubjectRequestService {
         patientRepository.save(p);
         auditService.log("PDPA_ERASURE", "PATIENT", p.getId(), patientCode,
                 String.format("{\"reason\":\"%s\"}", reason == null ? "" : reason), ipAddress);
-        log.info("Patient {} anonymised under right-to-erasure", patientCode);
+        log.info("Patient {} anonymised under right-to-erasure", com.uom.lims.util.PiiMasker.maskCode(patientCode));
     }
 
     /**

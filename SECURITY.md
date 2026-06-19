@@ -15,21 +15,25 @@
 | `MAIL_USERNAME`, `MAIL_PASSWORD` | SMTP (mail is disabled if unset) |
 | `AWS_ACCESS_KEY`, `AWS_SECRET_KEY` | S3 / object storage |
 
-## ⚠ Action required — rotate leaked credentials
-The following were previously committed in `application.yml` and must be treated
-as **compromised**:
-- the PostgreSQL password (`eta8827`)
-- the Gmail App Password (`ttzjwfsuwunfmexb`)
+## ⚠ Action required — leaked credentials (treat as COMPROMISED)
+A PostgreSQL password and a Gmail App Password were previously committed in
+`application.yml`. They are **not reproduced here** (re-publishing a secret in the
+repo defeats the purpose). They remain recoverable in git history until purged.
+
+**Status: the working tree is clean, but git HISTORY is not yet purged and the
+credentials are NOT yet confirmed rotated.** A human with repo + Google/DB access
+must complete the steps below — see `scripts/purge-secrets.sh` for the exact
+history-rewrite commands.
 
 Do this now:
-1. **Rotate the DB password** in PostgreSQL and update your `application-local.yml` / env.
-2. **Revoke the Gmail App Password** (Google Account → Security → App passwords) and issue a new one.
-3. **Purge from git history** (the values live in past commits even after this change):
+1. **Rotate the DB password** in PostgreSQL; update your `application-local.yml` / `DB_PASSWORD` env / Secrets Manager.
+2. **Revoke the old Gmail App Password** (Google Account → Security → App passwords) and issue a new one.
+3. **Purge from git history** across all three repos (values live in past commits even after the working tree was cleaned):
    ```bash
-   git filter-repo --path lims-core-service-app/src/main/resources/application.yml --invert-paths
-   # or use BFG; then force-push and have all clones re-clone
+   ./scripts/purge-secrets.sh   # wraps git filter-repo; force-pushes; see the script header
    ```
-4. After purge, rotate again (a value seen during the window should not be reused).
+4. After the purge + force-push, have **every** collaborator delete and re-clone (old clones still carry the secrets).
+5. Rotate **again** after the purge — any value exposed during the window must not be reused.
 
 ## CI gate
 A secret-scanning step (gitleaks/trufflehog) should block any PR that reintroduces

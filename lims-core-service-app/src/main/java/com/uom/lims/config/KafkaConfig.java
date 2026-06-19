@@ -48,7 +48,11 @@ public class KafkaConfig {
 
     @Bean
     public KafkaTemplate<String, Object> kafkaTemplate() {
-        return new KafkaTemplate<>(producerFactory());
+        KafkaTemplate<String, Object> template = new KafkaTemplate<>(producerFactory());
+        // G6: emit producer spans and propagate W3C trace headers (the hand-built
+        // template bypasses Boot auto-config that would otherwise enable this).
+        template.setObservationEnabled(true);
+        return template;
     }
 
     @Bean
@@ -83,6 +87,8 @@ public class KafkaConfig {
         factory.setConsumerFactory(kafkaStringConsumerFactory());
         factory.setCommonErrorHandler(kafkaErrorHandler);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+        // G6: continue the trace from the inbound record's W3C headers on the consumer side.
+        factory.getContainerProperties().setObservationEnabled(true);
         return factory;
     }
 }

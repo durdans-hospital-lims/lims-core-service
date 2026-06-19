@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ComplianceController {
 
     private final DataSubjectRequestService dsrService;
-    private final ClientIpResolver clientIpResolver;
+    // ClientIpResolver is a static utility (not a Spring bean) — call it statically.
 
     @PostMapping("/patients/{code}/consent")
     @PreAuthorize("isAuthenticated()")
@@ -32,7 +32,7 @@ public class ComplianceController {
             @PathVariable String code,
             @RequestParam(defaultValue = "v1") String version,
             HttpServletRequest request) {
-        dsrService.recordConsent(code, version, clientIpResolver.resolve(request));
+        dsrService.recordConsent(code, version, ClientIpResolver.resolve(request));
         return ResponseEntity.ok(ApiResponse.success(null, "Consent recorded"));
     }
 
@@ -41,7 +41,7 @@ public class ComplianceController {
     public ResponseEntity<ApiResponse<DataSubjectRequestService.PatientDataExport>> export(
             @PathVariable String code, HttpServletRequest request) {
         return ResponseEntity.ok(ApiResponse.success(
-                dsrService.export(code, clientIpResolver.resolve(request))));
+                dsrService.export(code, ClientIpResolver.resolve(request))));
     }
 
     @PostMapping("/patients/{code}/erase")
@@ -50,7 +50,7 @@ public class ComplianceController {
             @PathVariable String code,
             @RequestParam(required = false) String reason,
             HttpServletRequest request) {
-        dsrService.erase(code, reason, clientIpResolver.resolve(request));
+        dsrService.erase(code, reason, ClientIpResolver.resolve(request));
         return ResponseEntity.ok(ApiResponse.success(null, "Patient record anonymised"));
     }
 }

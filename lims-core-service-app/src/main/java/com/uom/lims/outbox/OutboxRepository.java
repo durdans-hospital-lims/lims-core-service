@@ -18,4 +18,10 @@ public interface OutboxRepository extends JpaRepository<OutboxEvent, UUID> {
      * and consumers are idempotent, so an occasional duplicate is acceptable.
      */
     List<OutboxEvent> findByPublishedAtIsNullAndFailedAtIsNullOrderByCreatedAtAsc(Pageable pageable);
+
+    /** Dead-lettered events (retries exhausted) — surfaced as the lims_outbox_dead_letter metric (G2). */
+    long countByFailedAtIsNotNull();
+
+    /** Unpublished backlog awaiting delivery — lims_outbox_backlog metric (G2). */
+    long countByPublishedAtIsNullAndFailedAtIsNull();
 }

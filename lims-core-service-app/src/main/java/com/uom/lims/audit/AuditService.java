@@ -98,7 +98,11 @@ public class AuditService {
         }
 
         auditLog.setIpAddress(ipAddress);
-        auditLog.setTimestamp(LocalDateTime.now());
+        // Truncate to microseconds: Postgres TIMESTAMP stores microsecond precision,
+        // so truncating here makes the in-memory value identical to what the seal
+        // trigger hashes and what the verifier reads back — the hash chain (H3) is
+        // only reproducible if these match exactly.
+        auditLog.setTimestamp(LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
         auditLog.setDetails(details);
 
         repository.save(auditLog);

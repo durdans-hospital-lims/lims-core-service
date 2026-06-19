@@ -20,4 +20,7 @@ public interface ReportDispatchItemRepository
     List<ReportDispatchItemEntity> findByReportReferenceIn(Collection<String> reportReferences);
 
     boolean existsByReportReferenceInAndOverallStatus(Collection<String> reportReferences, DispatchItemStatus status);
+
+    /** Count of dispatch items in the given states — backs the lims_dispatch_failed metric (G2). */
+    long countByOverallStatusIn(Collection<DispatchItemStatus> statuses);
 }

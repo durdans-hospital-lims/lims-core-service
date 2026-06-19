@@ -43,6 +43,7 @@ public class InstrumentResultIngestionService {
     private final TestResultRepository resultRepository;
     private final OutboxService outboxService;
     private final AutoverificationService autoverificationService;
+    private final com.uom.lims.notification.CriticalValueNotificationService criticalValueNotificationService;
 
     @Transactional
     public IngestOutcome ingest(AstmMessage.SpecimenResults specimen, String instrumentId) {
@@ -118,8 +119,15 @@ public class InstrumentResultIngestionService {
             } else {
                 allAutoVerified = false;
             }
-            resultRepository.save(result);
+            // Reassign to the saved instance: BaseEntity's non-null @Version makes Spring
+            // Data treat a new row as a merge, so only the RETURNED entity carries the
+            // generated id that openForResult needs.
+            TestResultEntity savedResult = resultRepository.save(result);
             ingested++;
+
+            // H1: an instrument-ingested critical result opens a critical-value callback
+            // (self-guards on critical flag + de-duplicates).
+            criticalValueNotificationService.openForResult(savedResult);
         }
 
         if (ingested > 0 && (sample.getStatus() == SampleStatus.ACCEPTED
