@@ -34,6 +34,8 @@ public class OutboxService {
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("Cannot serialize outbox payload for " + eventType, e);
         }
+        // G6: stamp the current trace so the relay can continue it on publish.
+        event.setTraceparent(com.uom.lims.util.TraceContext.currentTraceparent());
         repository.save(event);
     }
 }

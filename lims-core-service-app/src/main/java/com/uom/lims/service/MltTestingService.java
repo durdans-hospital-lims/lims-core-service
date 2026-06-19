@@ -69,6 +69,7 @@ public class MltTestingService {
         private final AuditService auditService;
         private final AuditLogRepository auditLogRepository;
         private final ObjectMapper objectMapper;
+        private final com.uom.lims.notification.CriticalValueNotificationService criticalValueNotificationService;
 
         @Transactional(readOnly = true)
         public SampleResultsResponse getSampleResults(UUID sampleId) {
@@ -226,6 +227,17 @@ public class MltTestingService {
                                         .findBySampleIdAndParameterId(sample.getId(), parameter.getId())
                                         .orElseGet(TestResultEntity::new);
 
+                        // H2 guard: a released (verified/authorized/dispatched) result must never be
+                        // silently overwritten through result entry — it can only be corrected via the
+                        // amendment workflow, which preserves the original value. The sample-status gate
+                        // above is not sufficient because returnToMlt/rejectResult can put a sample back
+                        // into IN_TESTING while some of its results are still released.
+                        if (isReleased(result.getStatus())) {
+                                throw new BusinessRuleException(
+                                                "A released result must be amended, not overwritten (result "
+                                                                + result.getId() + ", status " + result.getStatus() + ")");
+                        }
+
                         result.setSample(sample);
                         result.setParameter(parameter);
                         result.setResultValue(item.result());
@@ -239,7 +251,17 @@ public class MltTestingService {
                         result.setFlag(resolveResultFlag(item, parameter, patientGender, patientAge));
                         result.setStatus(isDraft ? null : ResultStatus.ENTERED);
 
-                        resultRepository.save(result);
+                        // Reassign to the saved instance: BaseEntity's non-null @Version makes
+                        // Spring Data merge a new row, so only the RETURNED entity carries the
+                        // generated id that openForResult needs.
+                        TestResultEntity savedResult = resultRepository.save(result);
+
+                        // H1: a submitted (non-draft) critical result opens a critical-value
+                        // callback atomically with the result. openForResult self-guards on
+                        // critical flag + de-duplicates, so this is safe to call per result.
+                        if (!isDraft) {
+                                criticalValueNotificationService.openForResult(savedResult);
+                        }
                 }
 
                 if (isDraft && sample.getStatus() == SampleStatus.ACCEPTED) {
@@ -261,6 +283,13 @@ public class MltTestingService {
                                         buildMltResultAuditPayload(sample, request, isDraft, parameterNames),
                                         null);
                 }
+        }
+
+        /** A result that has been verified, authorized or dispatched is immutable via result entry (H2). */
+        private static boolean isReleased(ResultStatus status) {
+                return status == ResultStatus.TECHNICALLY_VERIFIED
+                                || status == ResultStatus.CLINICALLY_AUTHORIZED
+                                || status == ResultStatus.DISPATCHED;
         }
 
         private Map<UUID, TestResultEntity> resolvePreviousAuthorizedResults(

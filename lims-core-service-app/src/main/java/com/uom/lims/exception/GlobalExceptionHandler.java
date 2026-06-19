@@ -210,8 +210,12 @@ public class GlobalExceptionHandler {
         public ResponseEntity<?> handleGenericException(Exception ex) {
                 // Do NOT echo ex.getMessage() to the client (it can leak SQL/constraint/
                 // stack detail). Log the detail server-side under a correlation id and
-                // return only that id so support can locate it.
-                String correlationId = java.util.UUID.randomUUID().toString();
+                // return only that id so support can locate it. Prefer the request's MDC
+                // correlationId (G4/G5) so the id returned matches the one in the logs.
+                String correlationId = org.slf4j.MDC.get(com.uom.lims.web.CorrelationIdFilter.MDC_KEY);
+                if (correlationId == null || correlationId.isBlank()) {
+                        correlationId = java.util.UUID.randomUUID().toString();
+                }
                 log.error("Unexpected error [{}]", correlationId, ex);
 
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(

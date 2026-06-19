@@ -1,6 +1,8 @@
 package com.uom.lims.patientdocument;
 
 import com.uom.lims.api.common.enums.DocumentType;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,8 @@ public class PatientDocumentStorageService {
                 this.bucketName = bucketName;
         }
 
+        @Retry(name = "s3", fallbackMethod = "uploadFileFallback")
+        @CircuitBreaker(name = "s3")
         public String uploadFile(String patientCode,
                         DocumentType documentType,
                         MultipartFile file) throws IOException {
@@ -74,6 +78,8 @@ public class PatientDocumentStorageService {
                 }
         }
 
+        @Retry(name = "s3", fallbackMethod = "generatePresignedUrlFallback")
+        @CircuitBreaker(name = "s3")
         public String generatePresignedUrl(String s3Key, Duration duration) {
 
                 GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -91,27 +97,47 @@ public class PatientDocumentStorageService {
                 return presignedRequest.url().toString();
         }
 
+        // deleteFile no longer swallows internally — exceptions PROPAGATE so the "s3"
+        // breaker observes failures; the best-effort behaviour is preserved by the
+        // fallback (logs and returns).
+        @Retry(name = "s3", fallbackMethod = "deleteFileFallback")
+        @CircuitBreaker(name = "s3")
         public void deleteFile(String s3Key) {
                 if (s3Key == null || s3Key.isBlank()) {
                         return;
                 }
 
-                try {
-                        log.info("Deleting file from S3 - Bucket: {}, Key: {}", bucketName, s3Key);
+                log.info("Deleting file from S3 - Bucket: {}, Key: {}", bucketName, s3Key);
 
-                        DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder()
-                                        .bucket(bucketName)
-                                        .key(s3Key)
-                                        .build();
+                DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder()
+                                .bucket(bucketName)
+                                .key(s3Key)
+                                .build();
 
-                        s3Client.deleteObject(deleteRequest);
+                s3Client.deleteObject(deleteRequest);
 
-                        log.info("File deleted successfully from S3 - Key: {}", s3Key);
+                log.info("File deleted successfully from S3 - Key: {}", s3Key);
+        }
 
-                } catch (Exception e) {
-                        log.error("Failed to delete file from S3 - Bucket: {}, Key: {}, Error: {}",
-                                        bucketName, s3Key, e.getMessage(), e);
-                }
+        // ---- F2 fallbacks ----
+
+        @SuppressWarnings("unused")
+        private String uploadFileFallback(String patientCode, DocumentType documentType,
+                        MultipartFile file, Throwable t) throws IOException {
+                log.error("S3 upload unavailable for patient {} (retry/breaker): {}", patientCode, t.toString());
+                throw new IOException("Document storage unavailable (circuit open or retries exhausted)", t);
+        }
+
+        @SuppressWarnings("unused")
+        private String generatePresignedUrlFallback(String s3Key, Duration duration, Throwable t) {
+                log.error("S3 presign unavailable for key {} (retry/breaker): {}", s3Key, t.toString());
+                throw new RuntimeException("Document storage unavailable (circuit open or retries exhausted)", t);
+        }
+
+        @SuppressWarnings("unused")
+        private void deleteFileFallback(String s3Key, Throwable t) {
+                // Best-effort delete: log and swallow (the object can be reaped by a lifecycle rule).
+                log.error("S3 delete unavailable for key {} (retry/breaker): {}", s3Key, t.toString());
         }
 
 }

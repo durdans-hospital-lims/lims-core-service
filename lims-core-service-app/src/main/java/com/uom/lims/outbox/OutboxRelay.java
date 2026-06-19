@@ -55,8 +55,16 @@ public class OutboxRelay {
             boolean sent = false;
             try {
                 Object payload = objectMapper.readTree(event.getPayload());
-                kafkaTemplate.send(event.getTopic(), event.getMessageKey(), payload)
-                        .get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                org.apache.kafka.clients.producer.ProducerRecord<String, Object> record =
+                        new org.apache.kafka.clients.producer.ProducerRecord<>(
+                                event.getTopic(), event.getMessageKey(), payload);
+                // G6: re-attach the originating request's trace so the consumer continues
+                // the same trace across the async outbox hop.
+                if (event.getTraceparent() != null && !event.getTraceparent().isBlank()) {
+                    record.headers().add("traceparent",
+                            event.getTraceparent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+                kafkaTemplate.send(record).get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 sent = true;
             } catch (Exception e) {
                 log.warn("Outbox publish failed for event {} — will retry", event.getId(), e);

@@ -1,10 +1,20 @@
 package com.uom.lims.notification;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
+/**
+ * F2: SMTP sends are wrapped in a retry + circuit-breaker ("smtp"). The SMTP socket
+ * timeouts (application.yml) bound each attempt; the breaker fails fast during an
+ * outage. Fallbacks rethrow a consistent RuntimeException — every caller already
+ * tolerates that (logs / records a FAILED attempt / returns false).
+ */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class EmailService {
@@ -17,6 +27,8 @@ public class EmailService {
     @Value("${app.verification.base-url}")
     private String baseUrl;
 
+    @Retry(name = "smtp", fallbackMethod = "sendVerificationEmailFallback")
+    @CircuitBreaker(name = "smtp")
     public void sendVerificationEmail(String toEmail, String patientName, String rawToken) {
 
         String verificationLink = baseUrl + "/api/v1/patients/verify-email?token=" + rawToken;
@@ -39,6 +51,8 @@ public class EmailService {
         }
     }
 
+    @Retry(name = "smtp", fallbackMethod = "sendLabReportEmailFallback")
+    @CircuitBreaker(name = "smtp")
     public void sendLabReportEmail(String toEmail, String patientName, String reportReference, String testPanelLabel,
             String artifactUri) {
         try {
@@ -66,6 +80,28 @@ public class EmailService {
             mailSender.send(message);
         } catch (jakarta.mail.MessagingException e) {
             throw new RuntimeException("Failed to send lab report email to " + toEmail, e);
+        }
+    }
+
+    /**
+     * Sends a plain notification email (used by the critical-value callback, H1). Kept
+     * generic so the caller controls subject/body; throws so the caller can record a
+     * failed attempt and retry/escalate.
+     */
+    @Retry(name = "smtp", fallbackMethod = "sendNotificationEmailFallback")
+    @CircuitBreaker(name = "smtp")
+    public void sendNotificationEmail(String toEmail, String subject, String bodyHtml) {
+        try {
+            jakarta.mail.internet.MimeMessage message = mailSender.createMimeMessage();
+            org.springframework.mail.javamail.MimeMessageHelper helper =
+                    new org.springframework.mail.javamail.MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+            helper.setText(bodyHtml, true);
+            mailSender.send(message);
+        } catch (jakarta.mail.MessagingException e) {
+            throw new RuntimeException("Failed to send notification email to " + toEmail, e);
         }
     }
 
@@ -126,5 +162,29 @@ public class EmailService {
                 """
                 .formatted(patientName, verificationLink, verificationLink, verificationLink,
                         java.time.Year.now().getValue());
+    }
+
+    // ---- F2 fallbacks: surface a consistent failure when retries are exhausted or the
+    //      breaker is open. Callers already handle a thrown RuntimeException. ----
+
+    @SuppressWarnings("unused")
+    private void sendVerificationEmailFallback(String toEmail, String patientName, String rawToken, Throwable t) {
+        throw emailUnavailable(toEmail, t);
+    }
+
+    @SuppressWarnings("unused")
+    private void sendLabReportEmailFallback(String toEmail, String patientName, String reportReference,
+            String testPanelLabel, String artifactUri, Throwable t) {
+        throw emailUnavailable(toEmail, t);
+    }
+
+    @SuppressWarnings("unused")
+    private void sendNotificationEmailFallback(String toEmail, String subject, String bodyHtml, Throwable t) {
+        throw emailUnavailable(toEmail, t);
+    }
+
+    private RuntimeException emailUnavailable(String toEmail, Throwable t) {
+        log.warn("Email delivery to {} unavailable (retry/breaker): {}", toEmail, t.toString());
+        return new RuntimeException("Email delivery unavailable (circuit open or retries exhausted)", t);
     }
 }

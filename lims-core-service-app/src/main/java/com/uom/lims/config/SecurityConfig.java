@@ -28,9 +28,13 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints — only liveness/readiness probes are open;
-                        // every other actuator endpoint requires SUPER_ADMIN.
-                        .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                        // Actuator is served on a SEPARATE internal management port
+                        // (management.server.port=11001) that is NOT published to the
+                        // host / opened in the security group. Health, info and the
+                        // Prometheus scrape endpoint are open on that internal port;
+                        // any other actuator endpoint still requires SUPER_ADMIN. On the
+                        // public API port (11000) actuator is not served at all (404).
+                        .requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
                         .requestMatchers("/actuator/**").hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/v1/patients/verify-email").permitAll()
                         .requestMatchers("/email-verification-success.html", "/email-verification-error.html")

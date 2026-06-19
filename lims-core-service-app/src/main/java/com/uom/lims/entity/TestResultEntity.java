@@ -83,4 +83,12 @@ public class TestResultEntity extends BaseEntity {
 
     @Column(name = "returned_at")
     private Instant returnedAt;
+
+    /** Current version of this result; 1 = original, incremented by each amendment (H2). */
+    @Column(name = "version_no", nullable = false)
+    private Integer versionNo = 1;
+
+    /** True once a released value has been corrected via the amendment workflow (H2). */
+    @Column(name = "is_amended", nullable = false)
+    private Boolean amended = false;
 }

@@ -1,5 +1,6 @@
 package com.uom.lims.notification;
 
+import com.uom.lims.util.PiiMasker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -27,7 +28,7 @@ public class NotificationDispatcher {
         try {
             emailService.sendVerificationEmail(event.email(), event.fullName(), event.rawToken());
         } catch (Exception e) {
-            log.error("Failed to send verification email to {}", event.email(), e);
+            log.error("Failed to send verification email to {}", PiiMasker.maskEmail(event.email()), e);
         }
     }
 
@@ -37,7 +38,7 @@ public class NotificationDispatcher {
         try {
             smsService.sendSms(event.phone(), "Your verification OTP is: " + event.rawOtp());
         } catch (Exception e) {
-            log.error("Failed to send OTP SMS to {}", event.phone(), e);
+            log.error("Failed to send OTP SMS to {}", PiiMasker.maskPhone(event.phone()), e);
         }
     }
 }

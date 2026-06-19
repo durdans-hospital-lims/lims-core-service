@@ -31,4 +31,9 @@
     <include file="liquibase/changelog/20260530190000_add_clinical_signature.xml"/>
     <include file="liquibase/changelog/20260530200000_create_reference_range.xml"/>
     <include file="liquibase/changelog/20260530210000_add_outbox_failed_at.xml"/>
+    <include file="liquibase/changelog/20260619120000_tamper_evident_audit_log.xml"/>
+    <include file="liquibase/changelog/20260619121000_create_test_result_amendment.xml"/>
+    <include file="liquibase/changelog/20260619121500_add_test_result_version_columns.xml"/>
+    <include file="liquibase/changelog/20260619122000_create_critical_value_notification.xml"/>
+    <include file="liquibase/changelog/20260619123000_add_outbox_trace_context.xml"/>
 </databaseChangeLog>

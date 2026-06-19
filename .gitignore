@@ -40,6 +40,11 @@ out/
 .cursor/
 .codex-logs/
 
+# AI assistant local artifacts
+.claude/
+.claude-code/
+claude*.log
+
 # Application config / secrets
 # Track only safe base configs. Ignore environment-specific files.
 **/src/main/resources/application-*.yml

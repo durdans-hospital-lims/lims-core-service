@@ -16,6 +16,9 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
 
         List<AuditLog> findByEntityTypeAndEntityIdOrderByTimestampDesc(String entityType, UUID entityId);
 
+        /** Sealed rows (row_hash populated by the seal trigger) in chain order — for H3 verification. */
+        List<AuditLog> findByRowHashIsNotNullOrderBySeqAsc();
+
         List<AuditLog> findByEntityTypeAndEntityIdInAndActionInOrderByTimestampAsc(
                         String entityType,
                         Collection<UUID> entityIds,
