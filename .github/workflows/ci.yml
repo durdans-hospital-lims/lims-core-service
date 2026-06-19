@@ -48,10 +48,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # Use the gitleaks CLI (MIT, free) instead of gitleaks-action@v2, which
+      # requires a paid GITLEAKS_LICENSE for org-owned repos. `detect` exits
+      # non-zero on a finding, so CI still fails on a leaked secret.
       - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source=/repo --redact --no-banner
 
   codeql:
     name: CodeQL (SAST)

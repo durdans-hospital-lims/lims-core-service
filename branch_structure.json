@@ -1,18 +1,27 @@
 {
   "default_branch": "develop",
   "branches": [
+    "dependabot/docker/eclipse-temurin-25-jre",
+    "dependabot/github_actions/workflow-dependencies-19a9eb07cc",
+    "dependabot/gradle/java-dependencies-d6f2315074",
     "develop",
-    "feature/supervisor-pathologist-workflow-v2",
+    "enterprise-hardening",
     "main"
   ],
   "parent": {
+    "dependabot/docker/eclipse-temurin-25-jre": "develop",
+    "dependabot/github_actions/workflow-dependencies-19a9eb07cc": "develop",
+    "dependabot/gradle/java-dependencies-d6f2315074": "develop",
     "develop": null,
-    "feature/supervisor-pathologist-workflow-v2": "develop",
+    "enterprise-hardening": "develop",
     "main": "develop"
   },
   "order": [
     "develop",
-    "feature/supervisor-pathologist-workflow-v2",
+    "dependabot/docker/eclipse-temurin-25-jre",
+    "dependabot/github_actions/workflow-dependencies-19a9eb07cc",
+    "dependabot/gradle/java-dependencies-d6f2315074",
+    "enterprise-hardening",
     "main"
   ]
 }
