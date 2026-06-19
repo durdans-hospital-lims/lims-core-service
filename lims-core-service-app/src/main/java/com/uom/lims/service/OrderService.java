@@ -32,15 +32,17 @@ import com.uom.lims.exception.InvalidStateTransitionException;
 import com.uom.lims.exception.ResourceNotFoundException;
 import com.uom.lims.repository.BillRepository;
 import com.uom.lims.repository.OrderRepository;
+import com.uom.lims.repository.OrderSpecifications;
 import com.uom.lims.repository.SampleRepository;
 import com.uom.lims.repository.TestCatalogRepository;
 import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.util.ReferenceNumberGenerator;
-import com.uom.lims.util.SecurityUtils;
+import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -83,7 +85,6 @@ public class OrderService {
         private final SampleRepository sampleRepository;
         private final ReferenceNumberGenerator referenceNumberGenerator;
         private final PatientClientService patientClientService;
-        private final SecurityUtils securityUtils;
         private final BillingProperties billingProperties;
         private final TestResultRepository testResultRepository;
         private final ReportDispatchItemRepository dispatchItemRepository;
@@ -103,7 +104,7 @@ public class OrderService {
          */
         public OrderResponse createOrder(OrderCreateRequest request) {
                 log.info("Creating order for patient {} by user {}", request.getPatientId(),
-                                securityUtils.getCurrentUsername());
+                                SecurityUtils.getCurrentUsername());
 
                 // Step 1: Resolve test catalog entries — fail fast if any testId is invalid or
                 // inactive.
@@ -176,7 +177,9 @@ public class OrderService {
                 order.setReferringDepartment(request.getReferringDepartment());
                 order.setRemarks(request.getRemarks());
                 order.setStatus(OrderStatus.PENDING);
-                order.setCreatedBy(securityUtils.getCurrentUsername());
+                order.setCreatedBy(SecurityUtils.getCurrentUsername());
+                // Stamp the owning branch so order/bill reads can be tenant-scoped.
+                order.setBranchCode(SecurityUtils.getCurrentBranchId());
 
                 // Step 4: Build one OrderItemEntity per test, snapshotting the catalog price.
                 List<OrderItemEntity> items = new ArrayList<>();
@@ -186,7 +189,7 @@ public class OrderService {
                         item.setTestId(test.getId());
                         item.setPrice(test.getPrice());
                         item.setStatus(SampleStatus.PENDING_COLLECTION);
-                        item.setCreatedBy(securityUtils.getCurrentUsername());
+                        item.setCreatedBy(SecurityUtils.getCurrentUsername());
                         items.add(item);
                 }
                 order.setItems(items);
@@ -218,7 +221,7 @@ public class OrderService {
                 bill.setTotalAmount(totalAmount);
                 bill.setPaidAmount(BigDecimal.ZERO);
                 bill.setPaymentStatus(PaymentStatus.PENDING);
-                bill.setCreatedBy(securityUtils.getCurrentUsername());
+                bill.setCreatedBy(SecurityUtils.getCurrentUsername());
                 billRepository.save(bill);
 
                 // Step 8: Create one SampleEntity per order item with a unique barcode.
@@ -237,7 +240,7 @@ public class OrderService {
                         sample.setPriority(samplePriority);
                         sample.setStatus(SampleStatus.PENDING_COLLECTION);
                         sample.setRecollectionCount(0);
-                        sample.setCreatedBy(securityUtils.getCurrentUsername());
+                        sample.setCreatedBy(SecurityUtils.getCurrentUsername());
                         sampleRepository.save(sample);
                 }
 
@@ -274,11 +277,12 @@ public class OrderService {
         @Transactional
         public Page<OrderResponse> getOrders(Pageable pageable, String patientId) {
                 String normalizedPatientId = patientId == null ? null : patientId.trim();
-                Page<OrderEntity> orders = normalizedPatientId == null || normalizedPatientId.isBlank()
-                                ? orderRepository.findAllByDeletedFalse(pageable)
-                                : orderRepository.findAllByPatientIdAndDeletedFalse(normalizedPatientId, pageable);
-                // WHY: Spring Data JPA derivation — findAllByDeletedFalse scopes out
-                // soft-deleted records.
+                // Tenant isolation: restrict to the caller's branch (all branches only
+                // for SUPER_ADMIN). resolveBranchScope() fails closed.
+                Specification<OrderEntity> spec = OrderSpecifications.notDeleted()
+                                .and(OrderSpecifications.forPatient(normalizedPatientId))
+                                .and(OrderSpecifications.inBranch(SecurityUtils.resolveBranchScope()));
+                Page<OrderEntity> orders = orderRepository.findAll(spec, pageable);
                 return orders
                                 .map(order -> {
                                         reconcileOrderCompletionFromDispatch(order);
@@ -294,6 +298,18 @@ public class OrderService {
         }
 
         /**
+         * Tenant isolation guard for a single order: a non-super-admin may only
+         * read an order in their own branch. Cross-branch access is reported as
+         * not-found so order existence is not revealed by enumeration.
+         */
+        private void assertBranchAccess(OrderEntity order) {
+                if (!SecurityUtils.canAccessBranch(order.getBranchCode())) {
+                        throw new ResourceNotFoundException(
+                                        "Order not found with id: " + order.getId());
+                }
+        }
+
+        /**
          * WHY: Lookup by UUID is the primary retrieval path. Using UUID prevents
          * sequential ID enumeration.
          *
@@ -305,6 +321,7 @@ public class OrderService {
         public OrderResponse getOrderById(UUID id) {
                 OrderEntity order = orderRepository.findByIdAndDeletedFalse(id)
                                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
+                assertBranchAccess(order);
                 reconcileOrderCompletionFromDispatch(order);
 
                 // Fetch test catalog for enrichment
@@ -321,6 +338,7 @@ public class OrderService {
         public OrderTrackingResponse getOrderTracking(UUID id) {
                 OrderEntity order = orderRepository.findByIdAndDeletedFalse(id)
                                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
+                assertBranchAccess(order);
                 reconcileOrderCompletionFromDispatch(order);
 
                 List<UUID> testIds = order.getItems().stream()
@@ -975,7 +993,7 @@ public class OrderService {
 
                 order.setStatus(OrderStatus.CANCELLED);
                 OrderEntity saved = orderRepository.save(order);
-                log.info("Order {} cancelled by {}", saved.getOrderNo(), securityUtils.getCurrentUsername());
+                log.info("Order {} cancelled by {}", saved.getOrderNo(), SecurityUtils.getCurrentUsername());
                 return toResponse(saved, null);
         }
 
@@ -996,7 +1014,7 @@ public class OrderService {
         private OrderResponse toResponse(OrderEntity order, Map<UUID, TestCatalogEntity> testMap) {
                 // Get patient details — graceful null if unavailable
                 PatientResponse patient = patientClientService
-                                .getPatientByCode(order.getPatientId(), securityUtils.getCurrentBearerToken());
+                                .getPatientByCode(order.getPatientId(), SecurityUtils.getCurrentBearerToken());
 
                 List<OrderItemResponse> itemResponses = order.getItems().stream()
                                 .map(item -> {

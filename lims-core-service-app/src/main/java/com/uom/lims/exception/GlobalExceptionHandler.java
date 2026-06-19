@@ -208,15 +208,34 @@ public class GlobalExceptionHandler {
 
         @ExceptionHandler(Exception.class)
         public ResponseEntity<?> handleGenericException(Exception ex) {
-                log.error("Unexpected error occurred", ex);
+                // Do NOT echo ex.getMessage() to the client (it can leak SQL/constraint/
+                // stack detail). Log the detail server-side under a correlation id and
+                // return only that id so support can locate it. Prefer the request's MDC
+                // correlationId (G4/G5) so the id returned matches the one in the logs.
+                String correlationId = org.slf4j.MDC.get(com.uom.lims.web.CorrelationIdFilter.MDC_KEY);
+                if (correlationId == null || correlationId.isBlank()) {
+                        correlationId = java.util.UUID.randomUUID().toString();
+                }
+                log.error("Unexpected error [{}]", correlationId, ex);
 
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                                 Map.of(
                                                 "timestamp", LocalDateTime.now(),
                                                 "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
                                                 "error", "Internal Server Error",
-                                                "message", ex.getMessage() != null ? ex.getMessage()
-                                                                : "An unexpected error occurred"));
+                                                "message", "An unexpected error occurred. Reference: " + correlationId,
+                                                "correlationId", correlationId));
+        }
+
+        @ExceptionHandler(BusinessRuleException.class)
+        public ResponseEntity<Map<String, Object>> handleBusinessRuleException(BusinessRuleException ex) {
+                Map<String, Object> body = new HashMap<>();
+                body.put("timestamp", LocalDateTime.now());
+                body.put("status", HttpStatus.UNPROCESSABLE_ENTITY.value());
+                body.put("error", "Business Rule Violation");
+                body.put("message", ex.getMessage());
+
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
         }
 
         @ExceptionHandler(BusinessRuleException.class)

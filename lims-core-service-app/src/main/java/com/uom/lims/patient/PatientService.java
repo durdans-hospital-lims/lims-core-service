@@ -79,11 +79,14 @@ public class PatientService {
                 patient.setAddress(request.getAddress());
                 patient.setContactPersonPhone(request.getContactPersonPhone());
 
-                // Set Branch Code (from request or fallback to current user's branch)
-                String branchCode = request.getBranchCode();
-                if (branchCode == null || branchCode.isBlank() || "BR001".equals(branchCode)) {
-                        branchCode = SecurityUtils.getCurrentBranchId();
-                }
+                // Branch is derived from the authenticated user so a branch user
+                // can only register patients into their own branch. A SUPER_ADMIN
+                // may register into an explicitly requested branch.
+                String branchCode = (SecurityUtils.isSuperAdmin()
+                                && request.getBranchCode() != null
+                                && !request.getBranchCode().isBlank())
+                                                ? request.getBranchCode()
+                                                : SecurityUtils.getCurrentBranchId();
                 patient.setBranchCode(branchCode);
 
                 // Save
@@ -125,6 +128,14 @@ public class PatientService {
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Patient not found with code: " + patientCode));
 
+                // Tenant isolation: a branch user must not read another branch's
+                // patient. Return not-found (not 403) so cross-branch existence is
+                // not revealed by enumeration.
+                if (SecurityUtils.isAuthenticated()
+                                && !SecurityUtils.canAccessBranch(patient.getBranchCode())) {
+                        throw new ResourceNotFoundException("Patient not found with code: " + patientCode);
+                }
+
                 return mapToPatientResponse(patient);
         }
 
@@ -140,10 +151,12 @@ public class PatientService {
 
                 Pageable pageable = PageRequest.of(page, size, sort);
 
-                Page<PatientEntity> patients = patientRepository.findByFullNameContainingIgnoreCaseOrPhoneContaining(
-                                keyword,
-                                keyword,
-                                pageable);
+                // Tenant isolation: restrict to the caller's branch (all branches
+                // only for SUPER_ADMIN). resolveBranchScope() fails closed.
+                Specification<PatientEntity> specification = PatientSpecification.keywordInBranch(
+                                keyword, SecurityUtils.resolveBranchScope());
+
+                Page<PatientEntity> patients = patientRepository.findAll(specification, pageable);
 
                 return patients.map(this::mapToPatientResponse);
         }
@@ -166,12 +179,18 @@ public class PatientService {
 
                 Pageable pageable = PageRequest.of(page, size, sort);
 
+                // Tenant isolation: non-super-admins are pinned to their own
+                // branch and any client-supplied branchCode is ignored; a
+                // SUPER_ADMIN may filter by the requested branchCode (or all).
+                String scope = SecurityUtils.resolveBranchScope();
+                String effectiveBranch = (scope == null) ? branchCode : scope;
+
                 Specification<PatientEntity> specification = PatientSpecification.filterPatients(
                                 fullName,
                                 phone,
                                 identityNumber,
                                 email,
-                                branchCode,
+                                effectiveBranch,
                                 phoneVerified,
                                 emailVerified);
 
@@ -379,14 +398,28 @@ public class PatientService {
                         pendingVerifications = patientRepository.countByEmailVerifiedFalseAndPhoneVerifiedFalse();
                 }
 
-                String todayTrend = "+12% vs yesterday";
+                // Real trend: registrations since start-of-yesterday minus today's = yesterday's.
+                Instant beginningOfYesterdayInstant = beginningOfToday.minusDays(1).atZone(zone).toInstant();
+                long sinceYesterday = (branchCode != null && !branchCode.isEmpty())
+                                ? patientRepository.countByBranchCodeAndCreatedAtAfter(branchCode,
+                                                beginningOfYesterdayInstant)
+                                : patientRepository.countByCreatedAtAfter(beginningOfYesterdayInstant);
+                long yesterdayCount = Math.max(0, sinceYesterday - todayCount);
 
                 return DashboardStatisticsResponse.builder()
                                 .patientsRegisteredToday(todayCount)
                                 .newPatientsThisWeek(weekCount)
                                 .pendingVerifications(pendingVerifications)
-                                .todayTrend(todayTrend)
+                                .todayTrend(formatTrend(todayCount, yesterdayCount))
                                 .build();
+        }
+
+        private static String formatTrend(long today, long yesterday) {
+                if (yesterday == 0) {
+                        return today == 0 ? "no change vs yesterday" : "+100% vs yesterday";
+                }
+                long pct = Math.round((today - yesterday) * 100.0 / yesterday);
+                return (pct >= 0 ? "+" : "") + pct + "% vs yesterday";
         }
 
         private void initiateEmailVerification(PatientEntity patient) {
@@ -403,7 +436,10 @@ public class PatientService {
                 patient.setEmailVerificationExpiry(LocalDateTime.now().plusHours(24));
                 patient.setLastVerificationSentAt(LocalDateTime.now());
 
-                emailService.sendVerificationEmail(patient.getEmail(), patient.getFullName(), rawToken);
+                // Send after commit (raw token lives only in the event, not the DB).
+                applicationEventPublisher.publishEvent(
+                                new com.uom.lims.notification.EmailVerificationRequestedEvent(
+                                                patient.getEmail(), patient.getFullName(), rawToken));
         }
 
         @Transactional
@@ -528,7 +564,10 @@ public class PatientService {
 
                 patientRepository.save(patient);
 
-                smsService.sendSms(patient.getPhone(), "Your verification OTP is: " + rawOtp);
+                // Send after commit so a rollback never leaves a live OTP for an
+                // uncommitted state, and SMS latency never pins the transaction.
+                applicationEventPublisher.publishEvent(
+                                new com.uom.lims.notification.PhoneOtpRequestedEvent(patient.getPhone(), rawOtp));
 
                 auditService.log(
                                 "SEND_PHONE_OTP",
@@ -547,20 +586,7 @@ public class PatientService {
 
                 if (patient.getPhoneOtpExpiry() == null ||
                                 patient.getPhoneOtpExpiry().isBefore(LocalDateTime.now())) {
-                        auditService.log("OTP_EXPIRED_DEBUG", "PATIENT", patient.getId(), patient.getPatientCode(),
-                                        String.format("{\"expiry\":\"%s\", \"now\":\"%s\"}",
-                                                        patient.getPhoneOtpExpiry(),
-                                                        LocalDateTime.now()),
-                                        ipAddress);
-                        log.error("OTP_EXPIRED_DEBUG: Expiry={}, Now={}, Diff={}",
-                                        patient.getPhoneOtpExpiry(),
-                                        LocalDateTime.now(),
-                                        java.time.Duration
-                                                        .between(LocalDateTime.now(),
-                                                                        patient.getPhoneOtpExpiry() != null
-                                                                                        ? patient.getPhoneOtpExpiry()
-                                                                                        : LocalDateTime.now())
-                                                        .toSeconds());
+                        // Expected user condition — not an error; no debug audit/log noise.
                         throw new InvalidRequestException("OTP expired");
                 }
 

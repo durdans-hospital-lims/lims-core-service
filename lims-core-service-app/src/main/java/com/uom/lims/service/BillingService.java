@@ -19,7 +19,7 @@ import com.uom.lims.repository.BillRepository;
 import com.uom.lims.repository.OrderRepository;
 import com.uom.lims.repository.PaymentRepository;
 import com.uom.lims.repository.TestCatalogRepository;
-import com.uom.lims.util.SecurityUtils;
+import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -49,7 +49,6 @@ public class BillingService {
         private final TestCatalogRepository testCatalogRepository;
         private final PatientClientService patientClientService;
         private final BillingProperties billingProperties;
-        private final SecurityUtils securityUtils;
 
         /**
          * WHY: Fetching a bill by order ID is the primary path from the order detail
@@ -61,7 +60,19 @@ public class BillingService {
                 BillEntity bill = billRepository.findByOrderIdAndDeletedFalse(orderId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Bill not found for order id: " + orderId));
+                assertBranchAccess(bill);
                 return toResponse(bill);
+        }
+
+        /**
+         * Tenant isolation: a non-super-admin may only act on a bill whose owning
+         * order is in their branch. Cross-branch access is reported as not-found.
+         */
+        private void assertBranchAccess(BillEntity bill) {
+                String branch = bill.getOrder() != null ? bill.getOrder().getBranchCode() : null;
+                if (!SecurityUtils.canAccessBranch(branch)) {
+                        throw new ResourceNotFoundException("Bill not found");
+                }
         }
 
         /**
@@ -73,6 +84,7 @@ public class BillingService {
                 BillEntity bill = billRepository.findById(billId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Bill not found with id: " + billId));
+                assertBranchAccess(bill);
                 return toResponse(bill);
         }
 
@@ -86,6 +98,7 @@ public class BillingService {
                 BillEntity bill = billRepository.findById(billId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Bill not found with id: " + billId));
+                assertBranchAccess(bill);
 
                 if (bill.getPaymentStatus() == PaymentStatus.PAID) {
                         throw new BusinessValidationException(
@@ -101,6 +114,10 @@ public class BillingService {
                 }
 
                 bill.setDiscount(request.getDiscountAmount());
+                // Persist the mandatory rationale + approver + time (financial audit).
+                bill.setDiscountReason(request.getReason());
+                bill.setDiscountBy(SecurityUtils.getCurrentUsername());
+                bill.setDiscountAt(Instant.now());
                 // WHY: Recalculate from source values to prevent compounding errors
                 // if applyDiscount is called multiple times
                 bill.setTotalAmount(
@@ -112,7 +129,7 @@ public class BillingService {
                 log.info("Discount {} applied to bill {} by {}",
                                 request.getDiscountAmount(),
                                 bill.getBillNo(),
-                                securityUtils.getCurrentUsername());
+                                SecurityUtils.getCurrentUsername());
                 return toResponse(saved);
         }
 
@@ -126,6 +143,7 @@ public class BillingService {
                 BillEntity bill = billRepository.findById(billId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Bill not found with id: " + billId));
+                assertBranchAccess(bill);
 
                 // Validate bill is not already paid
                 if (bill.getPaymentStatus() == PaymentStatus.PAID) {
@@ -179,7 +197,7 @@ public class BillingService {
                 payment.setNotes(request.getNotes());
                 payment.setPaymentDate(Instant.now());
                 payment.setReversed(false);
-                payment.setCreatedBy(securityUtils.getCurrentUsername());
+                payment.setCreatedBy(SecurityUtils.getCurrentUsername());
                 paymentRepository.save(payment);
 
                 // Update bill to PAID
@@ -193,7 +211,7 @@ public class BillingService {
                 log.info("Full payment {} processed for bill {} by {}",
                                 request.getAmount(),
                                 bill.getBillNo(),
-                                securityUtils.getCurrentUsername());
+                                SecurityUtils.getCurrentUsername());
                 return toResponse(saved);
         }
 
@@ -206,10 +224,11 @@ public class BillingService {
                 BillEntity bill = billRepository.findById(billId)
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Bill not found with id: " + billId));
+                assertBranchAccess(bill);
 
                 bill.setPrintCount(bill.getPrintCount() + 1);
                 bill.setLastPrintedAt(Instant.now());
-                bill.setLastPrintedBy(securityUtils.getCurrentUsername());
+                bill.setLastPrintedBy(SecurityUtils.getCurrentUsername());
 
                 BillEntity saved = billRepository.save(bill);
                 log.info("Bill {} printed (count: {}) by {}",
@@ -230,7 +249,7 @@ public class BillingService {
                                 : null;
                 PatientResponse patient = patientId != null
                                 ? patientClientService.getPatientByCode(
-                                                patientId, securityUtils.getCurrentBearerToken())
+                                                patientId, SecurityUtils.getCurrentBearerToken())
                                 : null;
 
                 List<OrderItemResponse> itemResponses = bill.getOrder() != null

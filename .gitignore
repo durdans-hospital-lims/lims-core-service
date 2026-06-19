@@ -36,8 +36,14 @@ out/
 /.nb-gradle/
 
 # VS Code
+.vscode/
 .cursor/
 .codex-logs/
+
+# AI assistant local artifacts
+.claude/
+.claude-code/
+claude*.log
 
 # Application config / secrets
 # Track only safe base configs. Ignore environment-specific files.
@@ -47,6 +53,3 @@ out/
 !**/src/main/resources/application.yaml
 !**/src/main/resources/application-endpoint.yml
 !**/src/main/resources/application-endpoint.yaml
-temp_auto_push.bat
-temp_interactive_push.bat
-.gitignore

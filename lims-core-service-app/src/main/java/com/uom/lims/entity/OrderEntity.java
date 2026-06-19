@@ -34,6 +34,10 @@ public class OrderEntity extends BaseEntity {
     @Column(name = "patient_id", nullable = false)
     private String patientId;
 
+    /** Owning branch, denormalised from the patient at creation, for tenant isolation. */
+    @Column(name = "branch_code")
+    private String branchCode;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private OrderStatus status = OrderStatus.PENDING;

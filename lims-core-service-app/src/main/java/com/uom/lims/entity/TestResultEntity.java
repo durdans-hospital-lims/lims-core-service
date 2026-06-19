@@ -32,6 +32,16 @@ public class TestResultEntity extends BaseEntity {
     @Column(name = "result_value", nullable = false, length = 100)
     private String resultValue;
 
+    /** Parsed numeric value (when the result is numeric) so results can be
+     * indexed, range-queried, trended and delta-checked without string parsing.
+     * Null for qualitative/text results. */
+    @Column(name = "result_numeric", precision = 14, scale = 4)
+    private java.math.BigDecimal resultNumeric;
+
+    /** NUMERIC | QUALITATIVE | TEXT — discriminates the result value type. */
+    @Column(name = "result_data_type", length = 16)
+    private String resultDataType;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "flag", length = 30)
     private ResultFlag flag;
@@ -64,9 +74,21 @@ public class TestResultEntity extends BaseEntity {
     @Column(name = "clinically_authorized_at")
     private Instant clinicallyAuthorizedAt;
 
+    /** Electronic-signature manifestation captured at authorization (who/when/meaning). */
+    @Column(name = "clinical_signature", length = 255)
+    private String clinicalSignature;
+
     @Column(name = "returned_by", length = 255)
     private String returnedBy;
 
     @Column(name = "returned_at")
     private Instant returnedAt;
+
+    /** Current version of this result; 1 = original, incremented by each amendment (H2). */
+    @Column(name = "version_no", nullable = false)
+    private Integer versionNo = 1;
+
+    /** True once a released value has been corrected via the amendment workflow (H2). */
+    @Column(name = "is_amended", nullable = false)
+    private Boolean amended = false;
 }

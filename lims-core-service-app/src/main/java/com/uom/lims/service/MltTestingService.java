@@ -28,7 +28,7 @@ import com.uom.lims.repository.TestResultRepository;
 import com.uom.lims.patient.PatientRepository;
 import com.uom.lims.patient.PatientEntity;
 import com.uom.lims.exception.ResourceNotFoundException;
-import com.uom.lims.util.SecurityUtils;
+import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,16 +65,18 @@ public class MltTestingService {
         private final TestResultRepository resultRepository;
         private final TestCatalogRepository testCatalogRepository;
         private final PatientRepository patientRepository;
-        private final SecurityUtils securityUtils;
+        private final com.uom.lims.refrange.ReferenceRangeService referenceRangeService;
         private final AuditService auditService;
         private final AuditLogRepository auditLogRepository;
         private final ObjectMapper objectMapper;
+        private final com.uom.lims.notification.CriticalValueNotificationService criticalValueNotificationService;
 
         @Transactional(readOnly = true)
         public SampleResultsResponse getSampleResults(UUID sampleId) {
 
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
+                assertSampleBranchAccess(sample);
 
                 UUID testId = sample.getOrderItem().getTestId();
                 TestCatalogEntity testCatalog = testCatalogRepository.findById(testId)
@@ -173,6 +175,7 @@ public class MltTestingService {
         private void processResults(UUID sampleId, SubmitResultsRequest request, boolean isDraft) {
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
+                assertSampleBranchAccess(sample);
 
                 if (isDraft) {
                         if (sample.getStatus() != SampleStatus.ACCEPTED
@@ -201,6 +204,16 @@ public class MltTestingService {
                 Map<UUID, String> parameterNames = testParameters.stream()
                                 .collect(Collectors.toMap(TestParameterEntity::getId, TestParameterEntity::getName));
 
+                // Resolve the patient's sex/age once so flagging can use age/sex-banded
+                // reference ranges (falls back to the parameter's own limits otherwise).
+                PatientEntity patientForRanges = patientRepository
+                                .findByPatientCode(sample.getOrderItem().getOrder().getPatientId()).orElse(null);
+                com.uom.lims.api.common.enums.Gender patientGender =
+                                patientForRanges != null ? patientForRanges.getGender() : null;
+                Integer patientAge = (patientForRanges != null && patientForRanges.getDob() != null)
+                                ? java.time.Period.between(patientForRanges.getDob(), java.time.LocalDate.now()).getYears()
+                                : null;
+
                 for (ResultItemRequest item : request.results()) {
 
                         TestParameterEntity parameter = parameterRepository.findById(item.parameterId())
@@ -214,15 +227,41 @@ public class MltTestingService {
                                         .findBySampleIdAndParameterId(sample.getId(), parameter.getId())
                                         .orElseGet(TestResultEntity::new);
 
+                        // H2 guard: a released (verified/authorized/dispatched) result must never be
+                        // silently overwritten through result entry — it can only be corrected via the
+                        // amendment workflow, which preserves the original value. The sample-status gate
+                        // above is not sufficient because returnToMlt/rejectResult can put a sample back
+                        // into IN_TESTING while some of its results are still released.
+                        if (isReleased(result.getStatus())) {
+                                throw new BusinessRuleException(
+                                                "A released result must be amended, not overwritten (result "
+                                                                + result.getId() + ", status " + result.getStatus() + ")");
+                        }
+
                         result.setSample(sample);
                         result.setParameter(parameter);
                         result.setResultValue(item.result());
+                        // Capture the numeric form (when parseable) for indexing/trending/delta,
+                        // and discriminate the value type.
+                        BigDecimal numericValue = parseNumericResult(item.result());
+                        result.setResultNumeric(numericValue);
+                        result.setResultDataType(numericValue != null ? "NUMERIC" : "TEXT");
                         result.setMltNotes(request.mltNotes());
                         result.setDraft(isDraft);
-                        result.setFlag(resolveResultFlag(item, parameter));
+                        result.setFlag(resolveResultFlag(item, parameter, patientGender, patientAge));
                         result.setStatus(isDraft ? null : ResultStatus.ENTERED);
 
-                        resultRepository.save(result);
+                        // Reassign to the saved instance: BaseEntity's non-null @Version makes
+                        // Spring Data merge a new row, so only the RETURNED entity carries the
+                        // generated id that openForResult needs.
+                        TestResultEntity savedResult = resultRepository.save(result);
+
+                        // H1: a submitted (non-draft) critical result opens a critical-value
+                        // callback atomically with the result. openForResult self-guards on
+                        // critical flag + de-duplicates, so this is safe to call per result.
+                        if (!isDraft) {
+                                criticalValueNotificationService.openForResult(savedResult);
+                        }
                 }
 
                 if (isDraft && sample.getStatus() == SampleStatus.ACCEPTED) {
@@ -244,6 +283,13 @@ public class MltTestingService {
                                         buildMltResultAuditPayload(sample, request, isDraft, parameterNames),
                                         null);
                 }
+        }
+
+        /** A result that has been verified, authorized or dispatched is immutable via result entry (H2). */
+        private static boolean isReleased(ResultStatus status) {
+                return status == ResultStatus.TECHNICALLY_VERIFIED
+                                || status == ResultStatus.CLINICALLY_AUTHORIZED
+                                || status == ResultStatus.DISPATCHED;
         }
 
         private Map<UUID, TestResultEntity> resolvePreviousAuthorizedResults(
@@ -358,7 +404,9 @@ public class MltTestingService {
 
         @Transactional(readOnly = true)
         public List<MltAllWorklistItemResponse> getAllWorklist() {
-                List<SampleEntity> samples = sampleRepository.findAllMltWorklistSamples();
+                // Tenant isolation: MLT worklist scoped to the caller's branch.
+                List<SampleEntity> samples = sampleRepository.findAllMltWorklistSamplesInBranch(
+                                SecurityUtils.resolveBranchScope());
 
                 List<UUID> testIds = samples.stream()
                                 .map(sample -> sample.getOrderItem().getTestId())
@@ -376,12 +424,15 @@ public class MltTestingService {
                                 .distinct()
                                 .toList();
 
-                Map<String, String> patientNameByCode = patientRepository.findAll().stream()
-                                .filter(patient -> patientCodes.contains(patient.getPatientCode()))
-                                .collect(Collectors.toMap(
-                                                PatientEntity::getPatientCode,
-                                                PatientEntity::getFullName,
-                                                (existing, replacement) -> existing));
+                // Look up only the patients referenced by this page of samples
+                // (was findAll() — loaded every patient across all branches).
+                Map<String, String> patientNameByCode = patientCodes.isEmpty()
+                                ? java.util.Map.of()
+                                : patientRepository.findByPatientCodeIn(patientCodes).stream()
+                                                .collect(Collectors.toMap(
+                                                                PatientEntity::getPatientCode,
+                                                                PatientEntity::getFullName,
+                                                                (existing, replacement) -> existing));
 
                 return samples.stream()
                                 .map(sample -> {
@@ -405,8 +456,10 @@ public class MltTestingService {
 
         private List<MltWorklistItemResponse> getWorklistByStatuses(List<SampleStatus> statuses) {
 
+                // Tenant isolation: MLT worklist scoped to the caller's branch.
                 List<SampleEntity> samples = sampleRepository
-                                .findByStatusInAndDeletedFalseOrderByCollectedAtAsc(statuses);
+                                .findByStatusInAndBranchOrderByCollectedAt(statuses,
+                                                SecurityUtils.resolveBranchScope());
                 List<UUID> testIds = samples.stream()
                                 .map(sample -> sample.getOrderItem().getTestId())
                                 .distinct()
@@ -437,6 +490,7 @@ public class MltTestingService {
 
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
+                assertSampleBranchAccess(sample);
 
                 if (sample.getStatus() != SampleStatus.COLLECTED) {
                         throw new BusinessRuleException("Only COLLECTED samples can be accepted");
@@ -459,6 +513,7 @@ public class MltTestingService {
 
                 SampleEntity sample = sampleRepository.findById(sampleId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Sample not found"));
+                assertSampleBranchAccess(sample);
 
                 if (sample.getStatus() != SampleStatus.COLLECTED) {
                         throw new BusinessRuleException("Only COLLECTED samples can be rejected");
@@ -473,7 +528,7 @@ public class MltTestingService {
                 sample.setRejectionReason(request.getRejectionReason());
                 sample.setRejectionNotes(request.getRejectionNotes());
                 sample.setRejectedAt(Instant.now());
-                sample.setRejectedBy(securityUtils.getCurrentUsername());
+                sample.setRejectedBy(SecurityUtils.getCurrentUsername());
 
                 sampleRepository.save(sample);
 
@@ -514,7 +569,18 @@ public class MltTestingService {
                 }
         }
 
-        private ResultFlag resolveResultFlag(ResultItemRequest item, TestParameterEntity parameter) {
+        /** Tenant isolation: a branch user may only act on a sample in their branch. */
+        private void assertSampleBranchAccess(SampleEntity sample) {
+                String branch = (sample.getOrderItem() != null && sample.getOrderItem().getOrder() != null)
+                                ? sample.getOrderItem().getOrder().getBranchCode()
+                                : null;
+                if (!SecurityUtils.canAccessBranch(branch)) {
+                        throw new ResourceNotFoundException("Sample not found");
+                }
+        }
+
+        private ResultFlag resolveResultFlag(ResultItemRequest item, TestParameterEntity parameter,
+                        com.uom.lims.api.common.enums.Gender gender, Integer ageYears) {
                 ResultFlag submittedFlag = null;
                 if (item.flag() != null && !item.flag().isBlank()) {
                         try {
@@ -531,24 +597,24 @@ public class MltTestingService {
                 BigDecimal numericResult = parseNumericResult(item.result());
 
                 if (numericResult != null) {
-                        if (parameter.getRefLow() != null && numericResult.compareTo(parameter.getRefLow()) < 0) {
-                                BigDecimal criticalLow = parameter.getRefLow().multiply(new BigDecimal("0.70"));
-                                if (numericResult.compareTo(criticalLow) < 0) {
-                                        return ResultFlag.CRITICAL_LOW;
-                                }
-                                return ResultFlag.LOW;
+                        // Prefer an age/sex-banded reference range when configured; otherwise
+                        // use the parameter's own reference/critical limits.
+                        BigDecimal refLow = parameter.getRefLow();
+                        BigDecimal refHigh = parameter.getRefHigh();
+                        BigDecimal critLow = parameter.getCriticalLow();
+                        BigDecimal critHigh = parameter.getCriticalHigh();
+                        com.uom.lims.refrange.ReferenceRangeEntity banded =
+                                        referenceRangeService.resolve(parameter.getId(), gender, ageYears);
+                        if (banded != null) {
+                                if (banded.getRefLow() != null) refLow = banded.getRefLow();
+                                if (banded.getRefHigh() != null) refHigh = banded.getRefHigh();
+                                if (banded.getCriticalLow() != null) critLow = banded.getCriticalLow();
+                                if (banded.getCriticalHigh() != null) critHigh = banded.getCriticalHigh();
                         }
-
-                        if (parameter.getRefHigh() != null && numericResult.compareTo(parameter.getRefHigh()) > 0) {
-                                BigDecimal criticalHigh = parameter.getRefHigh().multiply(new BigDecimal("1.30"));
-                                if (numericResult.compareTo(criticalHigh) > 0) {
-                                        return ResultFlag.CRITICAL_HIGH;
-                                }
-                                return ResultFlag.HIGH;
-                        }
-
-                        if (parameter.getRefLow() != null || parameter.getRefHigh() != null) {
-                                return ResultFlag.NORMAL;
+                        ResultFlag computed = com.uom.lims.results.ResultFlagResolver.fromThresholds(
+                                        numericResult, refLow, refHigh, critLow, critHigh);
+                        if (computed != null) {
+                                return computed;
                         }
                 }
 

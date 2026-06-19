@@ -14,7 +14,11 @@ import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
+import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.JsonSerializer;
+import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -44,7 +48,11 @@ public class KafkaConfig {
 
     @Bean
     public KafkaTemplate<String, Object> kafkaTemplate() {
-        return new KafkaTemplate<>(producerFactory());
+        KafkaTemplate<String, Object> template = new KafkaTemplate<>(producerFactory());
+        // G6: emit producer spans and propagate W3C trace headers (the hand-built
+        // template bypasses Boot auto-config that would otherwise enable this).
+        template.setObservationEnabled(true);
+        return template;
     }
 
     @Bean
@@ -55,14 +63,32 @@ public class KafkaConfig {
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true);
+        // Offsets are committed per successfully-processed record (AckMode.RECORD),
+        // not on a timer — so a failing record cannot have its offset silently
+        // advanced (message loss) nor be redelivered forever.
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         return new DefaultKafkaConsumerFactory<>(props);
     }
 
+    /**
+     * Retries a failing record a few times then routes it to a {@code <topic>.DLT}
+     * dead-letter topic instead of blocking the partition or dropping the message.
+     */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaStringListenerContainerFactory() {
+    public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<String, Object> kafkaTemplate) {
+        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate);
+        return new DefaultErrorHandler(recoverer, new FixedBackOff(1000L, 3L));
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaStringListenerContainerFactory(
+            DefaultErrorHandler kafkaErrorHandler) {
         ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(kafkaStringConsumerFactory());
+        factory.setCommonErrorHandler(kafkaErrorHandler);
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+        // G6: continue the trace from the inbound record's W3C headers on the consumer side.
+        factory.getContainerProperties().setObservationEnabled(true);
         return factory;
     }
 }

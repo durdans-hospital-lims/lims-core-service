@@ -24,6 +24,10 @@ public class TestCatalogEntity extends BaseEntity {
     @Column(name = "test_code", unique = true, nullable = false)
     private String testCode;
 
+    /** LOINC code for the orderable test/panel (interoperability: HL7/FHIR, external reporting). */
+    @Column(name = "loinc_code", length = 20)
+    private String loincCode;
+
     @Column(name = "test_name", nullable = false)
     private String testName;
 

@@ -7,7 +7,7 @@ import com.uom.lims.entity.SupplyEntity;
 import com.uom.lims.exception.BusinessValidationException;
 import com.uom.lims.exception.ResourceNotFoundException;
 import com.uom.lims.repository.SupplyRepository;
-import com.uom.lims.util.SecurityUtils;
+import com.uom.lims.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,7 +25,6 @@ public class SupplyService {
     private static final ZoneId BRANCH_ZONE = ZoneId.of("Asia/Colombo");
 
     private final SupplyRepository supplyRepository;
-    private final SecurityUtils securityUtils;
 
     @Transactional(readOnly = true)
     public List<SupplyResponse> listSupplies() {
@@ -58,7 +57,7 @@ public class SupplyService {
         entity.setMaxStock(request.getMaxStock());
         entity.setUnit(request.getUnit().trim());
         entity.setLastRestocked(parseLocalDateOrToday(request.getLastRestocked()));
-        entity.setCreatedBy(securityUtils.getCurrentUsername());
+        entity.setCreatedBy(SecurityUtils.getCurrentUsername());
 
         SupplyEntity saved = supplyRepository.save(entity);
         return toResponse(saved);

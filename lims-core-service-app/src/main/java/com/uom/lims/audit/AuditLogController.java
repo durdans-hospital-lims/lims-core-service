@@ -33,6 +33,7 @@ public class AuditLogController {
 
     private final AuditLogRepository auditLogRepository;
     private final AuditService auditService;
+    private final AuditChainVerifier auditChainVerifier;
     private final PatientRepository patientRepository;
     private final ObjectMapper objectMapper;
 
@@ -110,6 +111,23 @@ public class AuditLogController {
         auditService.writeStandalone(action, ENTITY_REVENUE_REPORT, null, null, details,
                 ClientIpResolver.resolve(request));
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Verifies the tamper-evident audit hash chain (H3). SUPER_ADMIN only: a positive
+     * result is evidence the audit trail has not been retro-actively altered; a break
+     * names the first offending row. Safe to run on demand or from a scheduled job.
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @GetMapping("/verify-chain")
+    public AuditChainVerificationResult verifyChain() {
+        AuditChainVerificationResult result = auditChainVerifier.verifyChain();
+        if (!result.valid()) {
+            log.error("AUDIT CHAIN INTEGRITY FAILURE: {}", result.message());
+        } else {
+            log.info("Audit chain verified: {} sealed rows intact", result.rowsChecked());
+        }
+        return result;
     }
 
     private String normalizeParam(String param) {

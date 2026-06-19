@@ -79,8 +79,9 @@ public class ClinicalAuthorizationService {
                 page,
                 size,
                 Sort.by(Sort.Order.desc("lastModifiedAt"), Sort.Order.desc("id")));
-        Page<SampleEntity> samplesPage = sampleRepository.findAllByStatusAndDeletedFalse(
-                SampleStatus.VERIFIED,
+        Page<SampleEntity> samplesPage = sampleRepository.findByStatusInAndBranch(
+                List.of(SampleStatus.VERIFIED),
+                SecurityUtils.resolveBranchScope(),
                 pageable);
 
         List<UUID> testIds = samplesPage.getContent().stream()
@@ -244,11 +245,13 @@ public class ClinicalAuthorizationService {
         sample.setStatus(SampleStatus.AUTHORIZED);
         sampleRepository.save(sample);
 
+        String signature = String.format("Electronically authorized by %s on %s", username, now);
         for (TestResultEntity result : targets) {
             result.setStatus(ResultStatus.CLINICALLY_AUTHORIZED);
             result.setClinicalNote(request.getClinicalNote());
             result.setClinicallyAuthorizedBy(username);
             result.setClinicallyAuthorizedAt(now);
+            result.setClinicalSignature(signature);
             result.setLastModifiedBy(username);
             result.setLastModifiedAt(now);
             testResultRepository.save(result);
