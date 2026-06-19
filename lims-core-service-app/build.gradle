@@ -28,7 +28,7 @@ dependencies {
 
     implementation 'software.amazon.awssdk:s3'
     implementation 'software.amazon.awssdk:auth'
-    implementation platform("software.amazon.awssdk:bom:2.25.20")
+    implementation platform("software.amazon.awssdk:bom:2.46.14")
     implementation 'org.springframework.boot:spring-boot-starter-cache'
     implementation 'com.github.ben-manes.caffeine:caffeine'
     implementation 'org.springframework.boot:spring-boot-starter-mail'
