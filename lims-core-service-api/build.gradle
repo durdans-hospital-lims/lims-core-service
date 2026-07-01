@@ -6,7 +6,7 @@ plugins {
 
 dependencyManagement {
     imports {
-        mavenBom "org.springframework.boot:spring-boot-dependencies:3.5.10"
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.1.0"
     }
 }
 
@@ -23,7 +23,7 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
 
     // Swagger Annotations
-    api 'io.swagger.core.v3:swagger-annotations:2.2.20'
+    api 'io.swagger.core.v3:swagger-annotations:2.2.52'
 
     // Spring Data Commons for Pageable and PageableDefault
     api 'org.springframework.data:spring-data-commons'
